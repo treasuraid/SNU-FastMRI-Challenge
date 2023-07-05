@@ -94,6 +94,7 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
         shutil.copyfile(exp_dir / 'model.pt', exp_dir / 'best_model.pt')
 
 
+# no pretrained model for now
 def download_model(url, fname):
     response = requests.get(url, timeout=10, stream=True)
 
