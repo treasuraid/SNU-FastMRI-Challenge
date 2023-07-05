@@ -54,3 +54,24 @@ def seed_fix(n):
     torch.backends.cudnn.benchmark = False
     np.random.seed(n)
     random.seed(n)
+
+
+def print_model_num_parameters(model : torch.nn.Module):
+    """
+    Print the number of parameters in a model
+    """
+    num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Number of parameters: {num_parameters}")
+
+    return num_parameters
+
+
+def print_model_parameters(model : torch.nn.Module, only_trainable : bool = True):
+    """
+    Print the parameters in a model
+    """
+    for name, param in model.named_parameters():
+        if param.requires_grad or not only_trainable:
+            print(name, param.data)
+
+

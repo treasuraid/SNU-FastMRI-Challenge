@@ -264,7 +264,7 @@ class VarNetBlock(nn.Module):
         super().__init__()
 
         self.model = model
-        self.dc_weight = nn.Parameter(torch.ones(1))
+        self.dc_weight = nn.Parameter(torch.ones(1)) # mu value in the paper
 
     def sens_expand(self, x: torch.Tensor, sens_maps: torch.Tensor) -> torch.Tensor:
         return fastmri.fft2c(fastmri.complex_mul(x, sens_maps))

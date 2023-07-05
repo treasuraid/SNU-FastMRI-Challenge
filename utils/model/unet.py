@@ -183,3 +183,6 @@ class TransposeConvBlock(nn.Module):
             Output tensor of shape `(N, out_chans, H*2, W*2)`.
         """
         return self.layers(image)
+
+
+
