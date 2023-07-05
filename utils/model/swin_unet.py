@@ -16,6 +16,7 @@ import numpy as np
 from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
 from torch.nn.modules.utils import _pair
 from scipy import ndimage
+from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,16 @@ SWIN_TINY_UNET = {
             "NUM_HEADS" : [ 3, 6, 12, 24 ],
             "WINDOW_SIZE" : 7
         }
+    },
+    "DATA" : {
+        "IMG_SIZE" : 224,
+    },
+
+    "TRAIN" : {
+        "USE_CHECKPOINT" : False
     }
 }
+
 
 class SwinUnet(nn.Module):
     def __init__(self, config, img_size=224, num_classes=21843, zero_head=False, vis=False):
@@ -857,6 +866,7 @@ class SwinTransformerSys(nn.Module):
 
     def forward(self, x):
         x, x_downsample = self.forward_features(x)
+        logger.info(msg = f"x.shape after downsample: {x.shape}")
         x = self.forward_up_features(x, x_downsample)
         x = self.up_x4(x)
 
@@ -877,4 +887,11 @@ if __name__ == "__main__" :
     # test random input
     input = torch.randn(1, 3, 224, 224)
 
-    model = SwinUnet()
+    config_model = OmegaConf.load("./config/swin_tiny_unet.yaml")
+    print(config_model.DATA.IMG_SIZE)
+
+    model = SwinUnet(config = config_model)
+
+    output = model(input)
+
+    print(output.size())
