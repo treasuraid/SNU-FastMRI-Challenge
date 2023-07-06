@@ -34,6 +34,12 @@ def parse():
     parser.add_argument('--max-key', type=str, default='max', help='Name of max key in attributes')
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed', required=True)
 
+    parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "swin"], help='Model to train')
+    parser.add_argument('--gradient_accumulation', type=int, default=1, help='Gradient accumulation')
+    parser.add_argument('--fp16', type=bool, default=False, help='Use mixed precision training')
+
+
+
     args = parser.parse_args()
     
     

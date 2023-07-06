@@ -13,42 +13,49 @@ from utils.data.load_data import create_data_loaders
 from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
-
+from utils.model.swin_unet import SwinUnet
 import os
 
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
+from accelerate import Accelerator
+from logging import getLogger
+
+logger = getLogger(__name__)
+
+def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, accelerator : Accelerator):
+
+    logger.debug(f"Running Training Epoch {epoch}")
     model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
     total_loss = 0.
 
     for iter, data in enumerate(data_loader):
-        mask, kspace, target, maximum, _, _ = data
-        mask = mask.cuda(non_blocking=True)
-        kspace = kspace.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
-        maximum = maximum.cuda(non_blocking=True)
 
-        output = model(kspace, mask)
-        loss = loss_type(output, target, maximum)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+        with accelerator.accumulate(model) :
+            mask, kspace, target, maximum, _, _ = data
+            output = model(kspace, mask)
+            loss = loss_type(output, target, maximum)
+            optimizer.zero_grad()
+            # loss.backward()
+            accelerator.backward(loss)
+            optimizer.step()
+            scheduler.step()
+            total_loss += loss.item() # todo : check if this is correct
 
         if iter % args.report_interval == 0:
-            print(
+            logger.info(
                 f'Epoch = [{epoch:3d}/{args.num_epochs:3d}] '
                 f'Iter = [{iter:4d}/{len(data_loader):4d}] '
                 f'Loss = {loss.item():.4g} '
                 f'Time = {time.perf_counter() - start_iter:.4f}s',
             )
             start_iter = time.perf_counter()
+
     total_loss = total_loss / len_loader
     return total_loss, time.perf_counter() - start_epoch
 
 
-def validate(args, model, data_loader):
+def validate(args, model, data_loader, accelerator : Accelerator):
     model.eval()
     reconstructions = defaultdict(dict)
     targets = defaultdict(dict)
@@ -112,36 +119,44 @@ def download_model(url, fname):
             progress_bar.update(len(chunk))
             fh.write(chunk)
 
-
-        
-def train(args):
-    device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
-    torch.cuda.set_device(device)
-    print('Current cuda device: ', torch.cuda.current_device())
-
-    model = VarNet(num_cascades=args.cascade, 
-                   chans=args.chans, 
-                   sens_chans=args.sens_chans)
-    model.to(device=device)
-
-    """
-    # using pretrained parameter
+def load_model(args, model : torch.nn.Module):
     VARNET_FOLDER = "https://dl.fbaipublicfiles.com/fastMRI/trained_models/varnet/"
     MODEL_FNAMES = "brain_leaderboard_state_dict.pt"
     if not Path(MODEL_FNAMES).exists():
         url_root = VARNET_FOLDER
         download_model(url_root + MODEL_FNAMES, MODEL_FNAMES)
-    
+
     pretrained = torch.load(MODEL_FNAMES)
     pretrained_copy = copy.deepcopy(pretrained)
     for layer in pretrained_copy.keys():
-        if layer.split('.',2)[1].isdigit() and (args.cascade <= int(layer.split('.',2)[1]) <=11):
+        if layer.split('.', 2)[1].isdigit() and (args.cascade <= int(layer.split('.', 2)[1]) <= 11):
             del pretrained[layer]
     model.load_state_dict(pretrained)
-    """
 
-    loss_type = SSIMLoss().to(device=device)
+def train(args):
+    device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
+    torch.cuda.set_device(device)
+
+    logger.info("Current cuda device: %d", torch.cuda.current_device())
+    # print('Current cuda device: ', torch.cuda.current_device())
+
+
+    # Choose Model
+    if args.model == 'varnet':
+        logger.info("model: varnet")
+        model = VarNet(num_cascades=args.cascade,
+                   chans=args.chans, 
+                   sens_chans=args.sens_chans)
+        # load_model(args, model) # no pretrained model for now
+
+    elif args.model == "swin":
+        logger.info("model: swin")
+        model = SwinUnet(args.config_path)
+
+
+    model = model.to(device=device)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
+    loss_type = SSIMLoss().to(device=device)
 
     best_val_loss = 1.
     start_epoch = 0
@@ -151,11 +166,21 @@ def train(args):
     val_loader = create_data_loaders(data_path = args.data_path_val, args = args)
     
     val_loss_log = np.empty((0, 2))
+
+    # accelerator settings
+    accelerator = Accelerator(fp16=args.fp16, gradient_accumulation_steps= args.gradient_acculuation)
+    # todo : fp16, gradient_accumulation to args
+    device = accelerator.device
+
+    model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
+
+
+
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
         
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type)
-        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type, accelerator)
+        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, accelerator)
         
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
         file_path = os.path.join(args.val_loss_dir, "val_loss_log")
@@ -166,13 +191,12 @@ def train(args):
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
         num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
 
-
         val_loss = val_loss / num_subjects
 
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
 
-        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
+        save_model(args, args.exp_dir, epoch + 1, accelerator.unwrap_model(model), optimizer, best_val_loss, is_new_best)
         print(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
