@@ -58,7 +58,6 @@ if __name__ == '__main__':
 
     logger.info(f"Actual Batch size: {args.batch_size} * {args.gradient_accumulation} = {args.batch_size * args.gradient_accumulation}")
 
-
     # fix seed
     if args.seed is not None:
         seed_fix(args.seed)

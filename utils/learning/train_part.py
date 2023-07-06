@@ -21,7 +21,7 @@ from accelerate import Accelerator
 from logging import getLogger
 
 logger = getLogger(__name__)
-
+logger.setLevel("INFO")
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, accelerator: Accelerator):
     logger.debug(f"Running Training Epoch {epoch}")
@@ -174,13 +174,18 @@ def train(args):
     # accelerator settings
     accelerator = Accelerator(mixed_precision=args.mixed_precision,
                               gradient_accumulation_steps=args.gradient_acculuation)
+
     # todo : fp16, gradient_accumulation to args
     device = accelerator.device
 
     model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
 
+    # test saving
+    save_model(args, args.exp_dir, 0, accelerator.unwrap_model(model), optimizer, best_val_loss,
+               False)
+
     for epoch in range(start_epoch, args.num_epochs):
-        print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
+        logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
 
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type, accelerator)
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader,
@@ -189,7 +194,7 @@ def train(args):
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
         file_path = os.path.join(args.val_loss_dir, "val_loss_log")
         np.save(file_path, val_loss_log)
-        print(f"loss file saved! {file_path}")
+        logger.info(f"loss file saved! {file_path}")
 
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
@@ -202,15 +207,13 @@ def train(args):
 
         save_model(args, args.exp_dir, epoch + 1, accelerator.unwrap_model(model), optimizer, best_val_loss,
                    is_new_best)
-        print(
+        logger.info(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
 
         if is_new_best:
-            print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+            logger.info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
             start = time.perf_counter()
             save_reconstructions(reconstructions, args.val_dir, targets=targets, inputs=inputs)
-            print(
-                f'ForwardTime = {time.perf_counter() - start:.4f}s',
-            )
+            logger.info(f'ForwardTime = {time.perf_counter() - start:.4f}s')
