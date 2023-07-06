@@ -35,6 +35,8 @@ def parse():
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed', required=True)
 
     args = parser.parse_args()
+    
+    
     return args
 
 if __name__ == '__main__':
