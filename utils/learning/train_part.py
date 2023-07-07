@@ -156,13 +156,11 @@ def train(args):
         logger.info("model: varnet")
         model = VarNet(num_cascades=args.cascade,
                        chans=args.chans,
-                       sens_chans=args.sens_chans)
+                       sens_chans=args.sens_chans,
+                       unet=args.unet,
+                       config= args.config) #todo : unet args add
 
         # load_model(args, model) # no pretrained model for now
-
-    elif args.model == "swin":
-        logger.info("model: swin")
-        model = SwinUnet(args.config_path)
 
     else :
         logger.error("model not found")

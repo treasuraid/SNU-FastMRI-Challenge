@@ -20,6 +20,13 @@ from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
 
+#
+# img_size=(768, 384), patch_size=4, in_chans=3, num_classes=1000,
+#                  embed_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
+#                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
+#                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
+#                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
+#                  use_checkpoint=False, final_upsample="expand_first", **kwargs
 
 SWIN_TINY_UNET = {
     "MODEL" : {
@@ -28,16 +35,18 @@ SWIN_TINY_UNET = {
         "DROP_PATH_RATE" : 0.2,
         "PRETRAIN_CKPT" : "./pretrained_ckpt/swin_tiny_patch4_window7_224.pth",
         "SWIN" : {
+            "PATCH_SIZE" : 4,
             "FINAL_UPSAMPLE" : "expand_first",
             "EMBED_DIM" : 96,
             "DEPTHS" : [ 2, 2, 2, 2 ],
             "DECODER_DEPTHS" : [ 2, 2, 2, 1 ],
             "NUM_HEADS" : [ 3, 6, 12, 24 ],
             "WINDOW_SIZE" : 7
+
         }
     },
     "DATA" : {
-        "IMG_SIZE" : 224,
+        "IMG_SIZE" : [768, 384],
     },
 
     "TRAIN" : {
@@ -47,28 +56,27 @@ SWIN_TINY_UNET = {
 
 
 class SwinUnet(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=21843, zero_head=False, vis=False):
+    def __init__(self, config, zero_head=False):
         super(SwinUnet, self).__init__()
-        self.num_classes = num_classes
         self.zero_head = zero_head
         self.config = config
 
         self.swin_unet = SwinTransformerSys(img_size=config.DATA.IMG_SIZE,
                                             patch_size=config.MODEL.SWIN.PATCH_SIZE,
                                             in_chans=config.MODEL.SWIN.IN_CHANS,
-                                            num_classes=self.num_classes,
+                                            num_classes=config.DATA.NUM_CLASSES,
                                             embed_dim=config.MODEL.SWIN.EMBED_DIM,
                                             depths=config.MODEL.SWIN.DEPTHS,
                                             num_heads=config.MODEL.SWIN.NUM_HEADS,
                                             window_size=config.MODEL.SWIN.WINDOW_SIZE,
                                             mlp_ratio=config.MODEL.SWIN.MLP_RATIO,
                                             qkv_bias=config.MODEL.SWIN.QKV_BIAS,
-                                            qk_scale=config.MODEL.SWIN.QK_SCALE,
                                             drop_rate=config.MODEL.DROP_RATE,
                                             drop_path_rate=config.MODEL.DROP_PATH_RATE,
                                             ape=config.MODEL.SWIN.APE,
                                             patch_norm=config.MODEL.SWIN.PATCH_NORM,
-                                            use_checkpoint=config.TRAIN.USE_CHECKPOINT)
+                                            use_checkpoint=config.TRAIN.USE_CHECKPOINT,
+                                            )
 
     def forward(self, x):
         if x.size()[1] == 1:
@@ -703,7 +711,7 @@ class SwinTransformerSys(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, img_size=224, patch_size=4, in_chans=3, num_classes=1000,
+    def __init__(self, img_size=(768, 384), patch_size=4, in_chans=3, num_classes=1000,
                  embed_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -798,8 +806,12 @@ class SwinTransformerSys(nn.Module):
 
         if self.final_upsample == "expand_first":
             print("---final upsample expand_first---")
-            self.up = FinalPatchExpand_X4(input_resolution=(img_size // patch_size, img_size // patch_size),
+            if type(img_size) is int :
+                self.up = FinalPatchExpand_X4(input_resolution=(img_size // patch_size, img_size // patch_size),
                                           dim_scale=4, dim=embed_dim)
+            else :
+                self.up = FinalPatchExpand_X4(input_resolution=(img_size[0] // patch_size, img_size[1] // patch_size),
+                                              dim_scale=4, dim=embed_dim)
             self.output = nn.Conv2d(in_channels=embed_dim, out_channels=self.num_classes, kernel_size=1, bias=False)
 
         self.apply(self._init_weights)
@@ -885,13 +897,16 @@ class SwinTransformerSys(nn.Module):
 if __name__ == "__main__" :
 
     # test random input
-    input = torch.randn(1, 3, 224, 224)
+    input = torch.randn(1, 3, 768, 384)
 
-    config_model = OmegaConf.load("./config/swin_tiny_unet.yaml")
+    config_model = OmegaConf.load("config/swin_36.yaml")
     print(config_model.DATA.IMG_SIZE)
 
     model = SwinUnet(config = config_model)
 
+    print(model)
     output = model(input)
 
     print(output.size())
+
+    print(f"Total params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")

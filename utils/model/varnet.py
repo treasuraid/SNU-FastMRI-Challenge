@@ -8,12 +8,14 @@ LICENSE file in the root directory of this source tree.
 import math
 from typing import List, Tuple
 
+from omegaconf import DictConfig, ListConfig
+
 import fastmri
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fastmri.data import transforms
-
+from swin_unet import SwinUnet
 from unet import Unet
 
 
@@ -215,6 +217,8 @@ class VarNet(nn.Module):
         sens_pools: int = 4,
         chans: int = 18,
         pools: int = 4,
+        unet: str = "plain",
+        config: ListConfig = None,
     ):
         """
         Args:
@@ -230,9 +234,15 @@ class VarNet(nn.Module):
         super().__init__()
 
         self.sens_net = SensitivityModel(sens_chans, sens_pools)
-        self.cascades = nn.ModuleList(
-            [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
-        )
+
+        if unet == "plain":
+            self.cascades = nn.ModuleList(
+                [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
+            )
+        elif unet == "swin":
+            self.cascades = nn.ModuleList(
+                [VarNetBlock(SwinUnet(config)) for _ in range(num_cascades)]
+            )
 
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         sens_maps = self.sens_net(masked_kspace, mask)
@@ -289,3 +299,23 @@ class VarNetBlock(nn.Module):
         )
 
         return current_kspace - soft_dc - model_term
+
+
+class SwinVarNetBlock(nn.Module) :
+    """
+    Model block for end-to-end variational network's Swin Transformer replacing U-Net
+    """
+
+    def __init__(self):
+        super(SwinVarNetBlock, self).__init__()
+
+
+if __name__ == "__main__" :
+
+    from omegaconf import OmegaConf # pip install omegaconf --upgrade
+    # check varnet number of parameters
+    config = OmegaConf.load("config/swin_48.yaml")
+    model = VarNet(num_cascades=6, sens_chans=8, sens_pools=4, chans=18, pools=4, unet="swin", config=config)
+    print(f"Total params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
+
+    input = torch.randn(1, 1, 640, 400, 2)
