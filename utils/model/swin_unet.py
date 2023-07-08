@@ -78,9 +78,17 @@ class SwinUnet(nn.Module):
                                             use_checkpoint=config.TRAIN.USE_CHECKPOINT,
                                             )
 
+    def complex_to_channels(self, x):
+        assert x.size()[-1] == 2
+
+        x = x.permute(0, 2, 3, 1)
+
+
     def forward(self, x):
-        if x.size()[1] == 1:
-            x = x.repeat(1, 3, 1, 1)
+        # if x.size()[1] == 1:
+        #     x = x.repeat(1, 3, 1, 1)
+        # x : [1, 1, 768, 384, 2] shaped tensor
+
         logits = self.swin_unet(x)
         return logits
 

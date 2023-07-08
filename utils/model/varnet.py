@@ -57,7 +57,7 @@ class NormUnet(nn.Module):
     def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
         b, c, h, w, two = x.shape
         assert two == 2
-        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w)
+        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w) # b c h w 2 -> b 2c h w
 
     def chan_complex_to_last_dim(self, x: torch.Tensor) -> torch.Tensor:
         b, c2, h, w = x.shape
