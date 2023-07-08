@@ -240,6 +240,8 @@ class VarNet(nn.Module):
                 [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
             )
         elif unet == "swin":
+            from omegaconf import OmegaConf
+            config = OmegaConf.load(config)
             self.cascades = nn.ModuleList(
                 [VarNetBlock(SwinUnet(config)) for _ in range(num_cascades)]
             )
@@ -305,15 +307,6 @@ class VarNetBlock(nn.Module):
         )
 
         return current_kspace - soft_dc - model_term
-
-
-class SwinVarNetBlock(nn.Module) :
-    """
-    Model block for end-to-end variational network's Swin Transformer replacing U-Net
-    """
-
-    def __init__(self):
-        super(SwinVarNetBlock, self).__init__()
 
 
 if __name__ == "__main__" :

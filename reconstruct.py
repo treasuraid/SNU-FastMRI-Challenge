@@ -16,9 +16,9 @@ def parse():
     parser.add_argument('-p', '--data_path', type=Path, default='/Data/leaderboard/', help='Directory of test data')
     parser.add_argument('-m', '--mask', type=str, default='acc4', choices=['acc4', 'acc8'], help='type of mask | acc4 or acc8')
     
-    parser.add_argument('--cascade', type=int, default=1, help='Number of cascades | Should be less than 12')
-    parser.add_argument('--chans', type=int, default=9, help='Number of channels for cascade U-Net')
-    parser.add_argument('--sens_chans', type=int, default=4, help='Number of channels for sensitivity map U-Net')
+    parser.add_argument('--cascade', type=int, default=6, help='Number of cascades | Should be less than 12')
+    parser.add_argument('--chans', type=int, default=18, help='Number of channels for cascade U-Net')
+    parser.add_argument('--sens_chans', type=int, default=8, help='Number of channels for sensitivity map U-Net')
     parser.add_argument("--input_key", type=str, default='kspace', help='Name of input key')
 
     args = parser.parse_args()
