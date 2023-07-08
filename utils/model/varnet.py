@@ -292,6 +292,12 @@ class VarNetBlock(nn.Module):
         mask: torch.Tensor,
         sens_maps: torch.Tensor,
     ) -> torch.Tensor:
+        # print inputs
+        print("current_kspace", current_kspace.shape)
+        print("ref_kspace", ref_kspace.shape)
+        print("mask", mask.shape)
+        print("sens_maps", sens_maps.shape)
+
         zero = torch.zeros(1, 1, 1, 1, 1).to(current_kspace)
         soft_dc = torch.where(mask, current_kspace - ref_kspace, zero) * self.dc_weight
         model_term = self.sens_expand(
@@ -317,5 +323,3 @@ if __name__ == "__main__" :
     config = OmegaConf.load("config/swin_48.yaml")
     model = VarNet(num_cascades=6, sens_chans=8, sens_pools=4, chans=18, pools=4, unet="swin", config=config)
     print(f"Total params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
-
-    input = torch.randn(1, 1, 640, 400, 2)
