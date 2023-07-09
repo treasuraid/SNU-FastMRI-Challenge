@@ -294,11 +294,6 @@ class VarNetBlock(nn.Module):
         mask: torch.Tensor,
         sens_maps: torch.Tensor,
     ) -> torch.Tensor:
-        # print inputs
-        print("current_kspace", current_kspace.shape)
-        print("ref_kspace", ref_kspace.shape)
-        print("mask", mask.shape)
-        print("sens_maps", sens_maps.shape)
 
         zero = torch.zeros(1, 1, 1, 1, 1).to(current_kspace)
         soft_dc = torch.where(mask, current_kspace - ref_kspace, zero) * self.dc_weight

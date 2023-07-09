@@ -29,7 +29,7 @@ def parse():
     parser.add_argument('-t', '--data-path-train', type=Path, default='/root/Data/train/', help='Directory of train data')
     parser.add_argument('-v', '--data-path-val', type=Path, default='/root/Data/val/', help='Directory of validation data')
     
-    parser.add_argument('--cascade', type=int, default=6, help='Number of cascades | Should be less than 12') ## important hyperparameter
+    parser.add_argument('--cascade', type=int, default=7, help='Number of cascades | Should be less than 12') ## important hyperparameter
     parser.add_argument('--chans', type=int, default=18, help='Number of channels for cascade U-Net | 18 in original varnet') ## important hyperparameter
     parser.add_argument('--sens_chans', type=int, default=8, help='Number of channels for sensitivity map U-Net | 8 in original varnet') ## important hyperparameter
     parser.add_argument('--input-key', type=str, default='kspace', help='Name of input key')
@@ -43,7 +43,7 @@ def parse():
 
 
     # accelerator
-    parser.add_argument('--gradient_accumulation', type=int, default=1, help='Gradient accumulation')
+    parser.add_argument('--gradient_accumulation', type=int, default=8, help='Gradient accumulation')
     parser.add_argument('--mixed_precision', type=str, default="fp16", choices =  ["no", "fp16" ,"fp8", "bp8"], help='Use mixed precision training')
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
