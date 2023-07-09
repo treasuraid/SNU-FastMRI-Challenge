@@ -83,3 +83,17 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False):
         shuffle=shuffle,
     )
     return data_loader
+
+
+def collate_fn(batch):
+
+    masks, inputs, targets, attrs, fnames, slices = [], [], [], [], [], []
+    for mask, input, target, attr, fname, slice in batch:
+        masks.append(mask)
+        inputs.append(input)
+        targets.append(target)
+        attrs.append(attr)
+        fnames.append(fname)
+        slices.append(slice)
+    return masks, inputs, targets, attrs, fnames, slices
+

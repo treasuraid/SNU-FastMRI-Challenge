@@ -37,7 +37,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             output = model(kspace, mask)
             loss = loss_type(output, target, maximum)
 
-            loss_mask = torch.zeros(target.shape).cuda()
+            # loss_mask = torch.zeros(target.shape).cuda()
 
             optimizer.zero_grad()
             # loss.backward()

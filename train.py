@@ -43,7 +43,6 @@ def parse():
     # train loss mask
     parser.add_argument("--mask", default=False, action = "store_true", help="Use mask for training Loss")
 
-
     # model
     parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "swin"], help='Model to train')
 
@@ -79,4 +78,3 @@ if __name__ == '__main__':
     args.val_dir.mkdir(parents=True, exist_ok=True)
 
     train(args)
-    
