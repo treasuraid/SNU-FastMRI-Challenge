@@ -68,6 +68,8 @@ def forward(args):
                 num_slices = hf['image_label'].shape[0]
             for i_slice in range(num_slices):
                 with h5py.File(l_fname, "r") as hf:
+
+                    # already SSIM score is calculated with mask
                     target = hf['image_label'][i_slice]
                     mask = np.zeros(target.shape)
                     mask[target>5e-5] = 1
