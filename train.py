@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import torch
 import argparse
 import shutil
@@ -18,12 +20,12 @@ logger = getLogger(__name__)
 
 
 def parse():
-    parser = argparse.ArgumentParser(description='Train Varnet on FastMRI challenge Images',
+    parser: ArgumentParser = argparse.ArgumentParser(description='Train Varnet on FastMRI challenge Images',
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
     parser.add_argument('-e', '--num-epochs', type=int, default=10, help='Number of epochs')
-    parser.add_argument('-l', '--lr', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('-l', '--lr', type=float, default=0.0003, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=200, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
     parser.add_argument('-t', '--data-path-train', type=Path, default='/root/Data/train/', help='Directory of train data')
@@ -38,6 +40,10 @@ def parse():
 
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed', required=True)
 
+    # train loss mask
+    parser.add_argument("--mask", type=str, default=False, store_true = True, help="Use mask for training Loss")
+
+
     # model
     parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "swin"], help='Model to train')
 
@@ -47,6 +53,7 @@ def parse():
     parser.add_argument('--mixed_precision', type=str, default="fp16", choices =  ["no", "fp16" ,"fp8", "bp8"], help='Use mixed precision training')
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
+
     args = parser.parse_args()
     
     
@@ -72,3 +79,4 @@ if __name__ == '__main__':
     args.val_dir.mkdir(parents=True, exist_ok=True)
 
     train(args)
+    

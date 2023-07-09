@@ -6,6 +6,7 @@ from __future__ import print_function
 import copy
 import logging
 import math
+from typing import List, Tuple
 
 from os.path import join as pjoin
 
@@ -16,6 +17,8 @@ import numpy as np
 from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
 from torch.nn.modules.utils import _pair
 from scipy import ndimage
+
+from torch.nn import functional as F
 from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
@@ -76,21 +79,82 @@ class SwinUnet(nn.Module):
                                             ape=config.MODEL.SWIN.APE,
                                             patch_norm=config.MODEL.SWIN.PATCH_NORM,
                                             use_checkpoint=config.TRAIN.USE_CHECKPOINT,
+                                            depths_decoder=config.MODEL.SWIN.DECODER_DEPTHS,
                                             )
 
-    def complex_to_channels(self, x):
-        assert x.size()[-1] == 2
+    def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, h, w, two = x.shape
+        assert two == 2
+        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w)  # b c h w 2 -> b 2c h w
 
-        x = x.permute(0, 2, 3, 1)
+    def chan_complex_to_last_dim(self, x: torch.Tensor) -> torch.Tensor:
+        b, c2, h, w = x.shape
+        assert c2 % 2 == 0
+        c = c2 // 2
+        return x.view(b, 2, c, h, w).permute(0, 2, 3, 4, 1).contiguous()
 
+    def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # group norm
+        b, c, h, w = x.shape
+        x = x.view(b, 2, c // 2 * h * w)
+
+        mean = x.mean(dim=2).view(b, c, 1, 1)
+        std = x.std(dim=2).view(b, c, 1, 1)
+
+        x = x.view(b, c, h, w)
+
+        return (x - mean) / std, mean, std
+
+    def unnorm(
+        self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+    ) -> torch.Tensor:
+        return x * std + mean
 
     def forward(self, x):
-        # if x.size()[1] == 1:
-        #     x = x.repeat(1, 3, 1, 1)
-        # x : [1, 1, 768, 384, 2] shaped tensor
+        if not x.shape[-1] == 2:
+            raise ValueError("Last dimension must be 2 for complex.")
 
-        logits = self.swin_unet(x)
-        return logits
+        # get shapes for unet and normalize
+        x = self.complex_to_chan_dim(x)
+        x, mean, std = self.norm(x)
+        x, pad_sizes = self.pad(x)
+
+        x = self.swin_unet(x)
+        x = self.unpad(x, *pad_sizes)
+        x = self.unnorm(x, mean, std)
+        x = self.chan_complex_to_last_dim(x)
+        return x
+
+    def pad(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, Tuple[List[int], List[int], int, int]]:
+        _, _, h, w = x.shape
+        # w_mult = ((w - 1) | 15) + 1
+        # h_mult = ((h - 1) | 15) + 1
+        # w_pad = [math.floor((w_mult - w) / 2), math.ceil((w_mult - w) / 2)]
+        # h_pad = [math.floor((h_mult - h) / 2), math.ceil((h_mult - h) / 2)]
+
+        w_pad = [(self.config.DATA.IMG_SIZE[1] - w)//2, (self.config.DATA.IMG_SIZE[1] - w)//2]
+        h_pad = [(self.config.DATA.IMG_SIZE[0] - h)//2, (self.config.DATA.IMG_SIZE[0] - h)//2]
+
+        # TODO: fix this type when PyTorch fixes theirs
+        # the documentation lies - this actually takes a list
+        # https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py#L3457
+        # https://github.com/pytorch/pytorch/pull/16949
+        x = F.pad(x, w_pad + h_pad)
+
+        return x, (h_pad, w_pad, self.config.DATA.IMG_SIZE[0], self.config.DATA.IMG_SIZE[1])
+
+    def unpad(
+        self,
+        x: torch.Tensor,
+        h_pad: List[int],
+        w_pad: List[int],
+        h_mult: int,
+        w_mult: int,
+    ) -> torch.Tensor:
+        return x[..., h_pad[0] : h_mult - h_pad[1], w_pad[0] : w_mult - w_pad[1]]
+
 
     def load_from(self, config):
         pretrained_path = config.MODEL.PRETRAIN_CKPT
@@ -570,9 +634,11 @@ class BasicLayer(nn.Module):
                 x = checkpoint.checkpoint(blk, x)
             else:
                 x = blk(x)
+        skip_x = None
         if self.downsample is not None:
+            skip_x = x.clone()
             x = self.downsample(x)
-        return x
+        return x, skip_x
 
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"
@@ -849,10 +915,10 @@ class SwinTransformerSys(nn.Module):
         x = self.pos_drop(x)
         x_downsample = []
 
-        for layer in self.layers:
-            x_downsample.append(x)
-            x = layer(x)
-
+        for i, layer in enumerate(self.layers):
+            x, skip = layer(x)
+            if skip is not None:
+                x_downsample.append(skip)
         x = self.norm(x)  # B L C
 
         return x, x_downsample
@@ -863,7 +929,7 @@ class SwinTransformerSys(nn.Module):
             if inx == 0:
                 x = layer_up(x)
             else:
-                x = torch.cat([x, x_downsample[3 - inx]], -1)
+                x = torch.cat([x, x_downsample[self.num_layers -1 - inx]], -1)
                 x = self.concat_back_dim[inx](x)
                 x = layer_up(x)
 

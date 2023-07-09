@@ -36,6 +36,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             mask, kspace, target, maximum, _, _ = data
             output = model(kspace, mask)
             loss = loss_type(output, target, maximum)
+
+            loss_mask = torch.zeros(target.shape).cuda()
+
             optimizer.zero_grad()
             # loss.backward()
             accelerator.backward(loss)
@@ -174,7 +177,7 @@ def train(args):
     start_epoch = 0
 
     train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args)
+    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False)
 
     val_loss_log = np.empty((0, 2))
 
