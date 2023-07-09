@@ -11,7 +11,7 @@ import copy
 
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
-from utils.common.utils import save_reconstructions, ssim_loss
+from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
 from utils.model.swin_unet import SwinUnet
@@ -168,7 +168,11 @@ def train(args):
     else :
         logger.error("model not found")
         raise NotImplementedError
-
+    
+    # print model parameters
+    
+    print_model_num_parameters(model)
+    
     # model = model.to(device=device)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
     loss_type = SSIMLoss().to(device=device)

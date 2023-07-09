@@ -11,7 +11,7 @@ import copy
 
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
-from utils.common.utils import save_reconstructions, ssim_loss
+from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss
 from utils.model.varnet import VarNet
 from utils.model.swin_unet import SwinUnet
@@ -36,6 +36,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             mask, kspace, target, maximum, _, _ = data
             output = model(kspace, mask)
             loss = loss_type(output, target, maximum)
+
+            loss_mask = torch.zeros(target.shape).cuda()
+
             optimizer.zero_grad()
             # loss.backward()
             accelerator.backward(loss)
@@ -156,18 +159,20 @@ def train(args):
         logger.info("model: varnet")
         model = VarNet(num_cascades=args.cascade,
                        chans=args.chans,
-                       sens_chans=args.sens_chans)
+                       sens_chans=args.sens_chans,
+                       unet=args.unet,
+                       config= args.config) #todo : unet args add
 
         # load_model(args, model) # no pretrained model for now
-
-    elif args.model == "swin":
-        logger.info("model: swin")
-        model = SwinUnet(args.config_path)
 
     else :
         logger.error("model not found")
         raise NotImplementedError
-
+    
+    # print model parameters
+    
+    print_model_num_parameters(model)
+    
     # model = model.to(device=device)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
     loss_type = SSIMLoss().to(device=device)
@@ -176,7 +181,7 @@ def train(args):
     start_epoch = 0
 
     train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args)
+    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False)
 
     val_loss_log = np.empty((0, 2))
 
