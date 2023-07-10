@@ -9,7 +9,7 @@ MODEL:
     EMBED_DIM: 48
     DEPTHS: [2, 2, 2]
     DECODER_DEPTHS: [2, 2, 2]
-    NUM_HEADS: [4, 8, 16]
+    NUM_HEADS: [2, 4, 8]
     WINDOW_SIZE: 5
     MLP_RATIO: 4
     QKV_BIAS: True
@@ -19,7 +19,7 @@ MODEL:
     NORM_LAYER: "nn.LayerNorm"
     NORM_LAYER_ARGS: {}
     PATCH_NORM: True
-    PATCH_SIZE: 4
+    PATCH_SIZE: 2
     IN_CHANS: 2
     APE: False
 

@@ -34,7 +34,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     for iter, data in enumerate(data_loader):
 
         with accelerator.accumulate(model):
-            mask, kspace, target, maximum, _, _, edge_target = data
+            mask, kspace, target, maximum, _, _, = data
             output = model(kspace, mask) # tuple[tensor, tensor] or tensor
 
             loss = loss_type(output, target, maximum)
@@ -166,7 +166,7 @@ def train(args):
         logger.info("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
                       fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
-    elseg:
+    else:
         logger.error("model not found")
         raise NotImplementedError
     
@@ -189,7 +189,7 @@ def train(args):
         loss_type = SSIMLoss().to(device=device)
     elif args.loss == "mse":
         loss_type = torch.nn.MSELoss().to(device=device)
-    elif args.loss == "mse+edge":
+    elif args.loss == "edge":
         loss_type = EdgeMAELoss().to(device=device)
     else:
         raise NotImplementedError("loss not found")

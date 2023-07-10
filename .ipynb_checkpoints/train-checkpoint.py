@@ -25,7 +25,7 @@ def parse():
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
     parser.add_argument('-e', '--num-epochs', type=int, default=10, help='Number of epochs')
-    parser.add_argument('-l', '--lr', type=float, default=0.0003, help='Learning rate')
+    parser.add_argument('-l', '--lr', type=float, default=0.0005, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=200, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
     parser.add_argument('-t', '--data-path-train', type=Path, default='/root/Data/train/', help='Directory of train data')
@@ -43,19 +43,31 @@ def parse():
     # train loss mask
     parser.add_argument("--mask", default=False, action = "store_true", help="Use mask for training Loss")
 
-
     # model
-    parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "swin"], help='Model to train')
+    parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "eamri"], help='Model to train')
 
 
     # accelerator
-    parser.add_argument('--gradient_accumulation', type=int, default=4, help='Gradient accumulation')
+    parser.add_argument('--gradient_accumulation', type=int, default=1, help='Gradient accumulation')
     parser.add_argument('--mixed_precision', type=str, default="fp16", choices =  ["no", "fp16" ,"fp8", "bp8"], help='Use mixed precision training')
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
 
+    # scheduler
+    parser.add_argument('--scheduler', type=str, default=None, choices = [None, "cosine", "step"], help='Scheduler to train')
+    parser.add_argument('--step_size', type=int, default=5, help='Step size for scheduler')
+    parser.add_argument('--gamma', type=float, default=0.5, help='Gamma for scheduler')
+
+
+    # loss
+    parser.add_argument('--loss', type=str, default='mse', choices = ["mse", "ssim", "edge"], help='Loss to train')
+    parser.add_argument("--edge_weight", type=float, default=1, help="Weight for edge loss") # 1 in original EAMRI paper
+
+
     args = parser.parse_args()
-    
+
+
+
     
     return args
 
@@ -79,4 +91,3 @@ if __name__ == '__main__':
     args.val_dir.mkdir(parents=True, exist_ok=True)
 
     train(args)
-    
