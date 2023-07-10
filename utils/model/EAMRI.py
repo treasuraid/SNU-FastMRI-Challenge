@@ -291,7 +291,8 @@ class EAMRI(nn.Module):
         x2 = self.net1(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
         e2 = self.edgeNet(x1)  # (B, 1, H, W)
         x1 = self.fuse1(x2, e2, masked_kspace, m, sens_map)
-        
+
+        e2.to("cpu")
 
         # second stage
         x2 = self.net2(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)

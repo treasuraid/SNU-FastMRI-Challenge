@@ -16,6 +16,8 @@ from utils.common.loss_function import SSIMLoss, EdgeMAELoss
 from utils.model.varnet import VarNet
 from utils.model.EAMRI import EAMRI
 from utils.model.swin_unet import SwinUnet
+import torch.utils.checkpoint as checkpoint
+from torch.utils.checkpoint import checkpoint_sequential
 import os
 
 from accelerate import Accelerator
@@ -31,16 +33,21 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     len_loader = len(data_loader)
     total_loss = 0.
 
-    for iter, data in enumerate(data_loader):
+    segments = 2
+    for iter, data in enumerate(tqdm(data_loader)):
 
         with accelerator.accumulate(model):
             mask, kspace, target, maximum, _, _, = data
             output = model(kspace, mask) # tuple[tensor, tensor] or tensor
 
+            modules = [module for k, module in model._modules.items()]
+            output = checkpoint_sequential(modules, segments, (kspace, mask))
             loss = loss_type(output, target, maximum)
             optimizer.zero_grad()
             accelerator.backward(loss)
             optimizer.step()
+
+
             if args.scheduler is not None:
                 scheduler.step()
 
