@@ -165,7 +165,7 @@ def train(args):
     elif args.model == 'eamri':
         logger.info("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
-                      fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
+                      fNums=[48,72,72,72,72], n_MSRB=3, shift=True)
     else:
         logger.error("model not found")
         raise NotImplementedError
