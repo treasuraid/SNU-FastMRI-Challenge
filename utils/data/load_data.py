@@ -62,7 +62,7 @@ class SliceData(Dataset):
         return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
 
 
-def create_data_loaders(data_path, args, shuffle=False, isforward=False):
+def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug = True):
     if isforward == False:
         max_key_ = args.max_key
         target_key_ = args.target_key
@@ -71,7 +71,7 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False):
         target_key_ = -1
     data_storage = SliceData(
         root=data_path,
-        transform=DataTransform(isforward, max_key_),
+        transform=DataTransform(isforward, max_key_, aug),
         input_key=args.input_key,
         target_key=target_key_,
         forward = isforward
@@ -83,3 +83,17 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False):
         shuffle=shuffle,
     )
     return data_loader
+
+
+def collate_fn(batch):
+
+    masks, inputs, targets, attrs, fnames, slices = [], [], [], [], [], []
+    for mask, input, target, attr, fname, slice in batch:
+        masks.append(mask)
+        inputs.append(input)
+        targets.append(target)
+        attrs.append(attr)
+        fnames.append(fname)
+        slices.append(slice)
+    return masks, inputs, targets, attrs, fnames, slices
+

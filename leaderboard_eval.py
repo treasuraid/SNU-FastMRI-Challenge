@@ -68,6 +68,8 @@ def forward(args):
                 num_slices = hf['image_label'].shape[0]
             for i_slice in range(num_slices):
                 with h5py.File(l_fname, "r") as hf:
+
+                    # already SSIM score is calculated with mask
                     target = hf['image_label'][i_slice]
                     mask = np.zeros(target.shape)
                     mask[target>5e-5] = 1
@@ -107,7 +109,7 @@ if __name__ == '__main__':
     """
     Modify Path Below To Test Your Results
     """
-    parser.add_argument('-yp', '--your_data_path', type=Path, default='../result/test_varnet/reconstructions_leaderboard/')
+    parser.add_argument('-yp', '--your_data_path', type=Path, default='../result/test_accelerator/reconstructions_leaderboard/')
     parser.add_argument('-m', '--mask', type=str, default='acc4', choices=['acc4', 'acc8'], help='type of mask | acc4 or acc8')
     parser.add_argument('-key', '--output_key', type=str, default='reconstruction')
     

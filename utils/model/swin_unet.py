@@ -6,6 +6,7 @@ from __future__ import print_function
 import copy
 import logging
 import math
+from typing import List, Tuple
 
 from os.path import join as pjoin
 
@@ -16,10 +17,19 @@ import numpy as np
 from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
 from torch.nn.modules.utils import _pair
 from scipy import ndimage
+
+from torch.nn import functional as F
 from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
 
+#
+# img_size=(768, 384), patch_size=4, in_chans=3, num_classes=1000,
+#                  embed_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
+#                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
+#                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
+#                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
+#                  use_checkpoint=False, final_upsample="expand_first", **kwargs
 
 SWIN_TINY_UNET = {
     "MODEL" : {
@@ -28,16 +38,18 @@ SWIN_TINY_UNET = {
         "DROP_PATH_RATE" : 0.2,
         "PRETRAIN_CKPT" : "./pretrained_ckpt/swin_tiny_patch4_window7_224.pth",
         "SWIN" : {
+            "PATCH_SIZE" : 4,
             "FINAL_UPSAMPLE" : "expand_first",
             "EMBED_DIM" : 96,
             "DEPTHS" : [ 2, 2, 2, 2 ],
             "DECODER_DEPTHS" : [ 2, 2, 2, 1 ],
             "NUM_HEADS" : [ 3, 6, 12, 24 ],
             "WINDOW_SIZE" : 7
+
         }
     },
     "DATA" : {
-        "IMG_SIZE" : 224,
+        "IMG_SIZE" : [768, 384],
     },
 
     "TRAIN" : {
@@ -47,34 +59,102 @@ SWIN_TINY_UNET = {
 
 
 class SwinUnet(nn.Module):
-    def __init__(self, config, img_size=224, num_classes=21843, zero_head=False, vis=False):
+    def __init__(self, config, zero_head=False):
         super(SwinUnet, self).__init__()
-        self.num_classes = num_classes
         self.zero_head = zero_head
         self.config = config
 
         self.swin_unet = SwinTransformerSys(img_size=config.DATA.IMG_SIZE,
                                             patch_size=config.MODEL.SWIN.PATCH_SIZE,
                                             in_chans=config.MODEL.SWIN.IN_CHANS,
-                                            num_classes=self.num_classes,
+                                            num_classes=config.DATA.NUM_CLASSES,
                                             embed_dim=config.MODEL.SWIN.EMBED_DIM,
                                             depths=config.MODEL.SWIN.DEPTHS,
                                             num_heads=config.MODEL.SWIN.NUM_HEADS,
                                             window_size=config.MODEL.SWIN.WINDOW_SIZE,
                                             mlp_ratio=config.MODEL.SWIN.MLP_RATIO,
                                             qkv_bias=config.MODEL.SWIN.QKV_BIAS,
-                                            qk_scale=config.MODEL.SWIN.QK_SCALE,
                                             drop_rate=config.MODEL.DROP_RATE,
                                             drop_path_rate=config.MODEL.DROP_PATH_RATE,
                                             ape=config.MODEL.SWIN.APE,
                                             patch_norm=config.MODEL.SWIN.PATCH_NORM,
-                                            use_checkpoint=config.TRAIN.USE_CHECKPOINT)
+                                            use_checkpoint=config.TRAIN.USE_CHECKPOINT,
+                                            depths_decoder=config.MODEL.SWIN.DECODER_DEPTHS,
+                                            )
+
+    def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
+        b, c, h, w, two = x.shape
+        assert two == 2
+        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w)  # b c h w 2 -> b 2c h w
+
+    def chan_complex_to_last_dim(self, x: torch.Tensor) -> torch.Tensor:
+        b, c2, h, w = x.shape
+        assert c2 % 2 == 0
+        c = c2 // 2
+        return x.view(b, 2, c, h, w).permute(0, 2, 3, 4, 1).contiguous()
+
+    def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # group norm
+        b, c, h, w = x.shape
+        x = x.view(b, 2, c // 2 * h * w)
+
+        mean = x.mean(dim=2).view(b, c, 1, 1)
+        std = x.std(dim=2).view(b, c, 1, 1)
+
+        x = x.view(b, c, h, w)
+
+        return (x - mean) / std, mean, std
+
+    def unnorm(
+        self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+    ) -> torch.Tensor:
+        return x * std + mean
 
     def forward(self, x):
-        if x.size()[1] == 1:
-            x = x.repeat(1, 3, 1, 1)
-        logits = self.swin_unet(x)
-        return logits
+        if not x.shape[-1] == 2:
+            raise ValueError("Last dimension must be 2 for complex.")
+
+        # get shapes for unet and normalize
+        x = self.complex_to_chan_dim(x)
+        x, mean, std = self.norm(x)
+        x, pad_sizes = self.pad(x)
+
+        x = self.swin_unet(x)
+        x = self.unpad(x, *pad_sizes)
+        x = self.unnorm(x, mean, std)
+        x = self.chan_complex_to_last_dim(x)
+        return x
+
+    def pad(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, Tuple[List[int], List[int], int, int]]:
+        _, _, h, w = x.shape
+        # w_mult = ((w - 1) | 15) + 1
+        # h_mult = ((h - 1) | 15) + 1
+        # w_pad = [math.floor((w_mult - w) / 2), math.ceil((w_mult - w) / 2)]
+        # h_pad = [math.floor((h_mult - h) / 2), math.ceil((h_mult - h) / 2)]
+
+        w_pad = [(self.config.DATA.IMG_SIZE[1] - w)//2, (self.config.DATA.IMG_SIZE[1] - w)//2]
+        h_pad = [(self.config.DATA.IMG_SIZE[0] - h)//2, (self.config.DATA.IMG_SIZE[0] - h)//2]
+
+        # TODO: fix this type when PyTorch fixes theirs
+        # the documentation lies - this actually takes a list
+        # https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py#L3457
+        # https://github.com/pytorch/pytorch/pull/16949
+        x = F.pad(x, w_pad + h_pad)
+
+        return x, (h_pad, w_pad, self.config.DATA.IMG_SIZE[0], self.config.DATA.IMG_SIZE[1])
+
+    def unpad(
+        self,
+        x: torch.Tensor,
+        h_pad: List[int],
+        w_pad: List[int],
+        h_mult: int,
+        w_mult: int,
+    ) -> torch.Tensor:
+        return x[..., h_pad[0] : h_mult - h_pad[1], w_pad[0] : w_mult - w_pad[1]]
+
 
     def load_from(self, config):
         pretrained_path = config.MODEL.PRETRAIN_CKPT
@@ -554,9 +634,11 @@ class BasicLayer(nn.Module):
                 x = checkpoint.checkpoint(blk, x)
             else:
                 x = blk(x)
+        skip_x = None
         if self.downsample is not None:
+            skip_x = x.clone()
             x = self.downsample(x)
-        return x
+        return x, skip_x
 
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"
@@ -703,7 +785,7 @@ class SwinTransformerSys(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, img_size=224, patch_size=4, in_chans=3, num_classes=1000,
+    def __init__(self, img_size=(768, 384), patch_size=4, in_chans=3, num_classes=1000,
                  embed_dim=96, depths=[2, 2, 2, 2], depths_decoder=[1, 2, 2, 2], num_heads=[3, 6, 12, 24],
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -798,8 +880,12 @@ class SwinTransformerSys(nn.Module):
 
         if self.final_upsample == "expand_first":
             print("---final upsample expand_first---")
-            self.up = FinalPatchExpand_X4(input_resolution=(img_size // patch_size, img_size // patch_size),
+            if type(img_size) is int :
+                self.up = FinalPatchExpand_X4(input_resolution=(img_size // patch_size, img_size // patch_size),
                                           dim_scale=4, dim=embed_dim)
+            else :
+                self.up = FinalPatchExpand_X4(input_resolution=(img_size[0] // patch_size, img_size[1] // patch_size),
+                                              dim_scale=4, dim=embed_dim)
             self.output = nn.Conv2d(in_channels=embed_dim, out_channels=self.num_classes, kernel_size=1, bias=False)
 
         self.apply(self._init_weights)
@@ -829,10 +915,10 @@ class SwinTransformerSys(nn.Module):
         x = self.pos_drop(x)
         x_downsample = []
 
-        for layer in self.layers:
-            x_downsample.append(x)
-            x = layer(x)
-
+        for i, layer in enumerate(self.layers):
+            x, skip = layer(x)
+            if skip is not None:
+                x_downsample.append(skip)
         x = self.norm(x)  # B L C
 
         return x, x_downsample
@@ -843,7 +929,7 @@ class SwinTransformerSys(nn.Module):
             if inx == 0:
                 x = layer_up(x)
             else:
-                x = torch.cat([x, x_downsample[3 - inx]], -1)
+                x = torch.cat([x, x_downsample[self.num_layers -1 - inx]], -1)
                 x = self.concat_back_dim[inx](x)
                 x = layer_up(x)
 
@@ -885,13 +971,16 @@ class SwinTransformerSys(nn.Module):
 if __name__ == "__main__" :
 
     # test random input
-    input = torch.randn(1, 3, 224, 224)
+    input = torch.randn(1, 3, 768, 384)
 
-    config_model = OmegaConf.load("./config/swin_tiny_unet.yaml")
+    config_model = OmegaConf.load("config/swin_36.yaml")
     print(config_model.DATA.IMG_SIZE)
 
     model = SwinUnet(config = config_model)
 
+    print(model)
     output = model(input)
 
     print(output.size())
+
+    print(f"Total params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
