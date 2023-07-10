@@ -315,7 +315,8 @@ class EAMRI(nn.Module):
 
         result = (result ** 2).sum(dim=1).sqrt().unsqueeze(dim = 1) # (B, H, W)
 
-        return torch.stack([e2,e3,e4,e5], dim = 0), result
+        return torch.stack([e2,e3,e4,e5], dim = 0)[..., (height - 384) // 2: 384 + (height - 384) // 2,
+                 (width - 384) // 2: 384 + (width - 384) // 2], result
 
 
 if __name__ == "__main__":
