@@ -14,6 +14,7 @@ from utils.data.load_data import create_data_loaders
 from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss, EdgeMAELoss
 from utils.model.varnet import VarNet
+from utils.model.EAMRI import EAMRI
 from utils.model.swin_unet import SwinUnet
 import os
 
@@ -33,21 +34,19 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     for iter, data in enumerate(data_loader):
 
         with accelerator.accumulate(model):
-            mask, kspace, target, maximum, _, _ = data
-            output = model(kspace, mask)
+            mask, kspace, target, maximum, _, _, edge_target = data
+            output = model(kspace, mask) # tuple[tensor, tensor] or tensor
+
             loss = loss_type(output, target, maximum)
-
-            # loss_mask = torch.zeros(target.shape).cuda()
-
             optimizer.zero_grad()
-            # loss.backward()
             accelerator.backward(loss)
             optimizer.step()
-            if scheduler is not None:
+            if args.scheduler is not None:
                 scheduler.step()
-            total_loss += loss.item()  # todo : check if this is correct
 
-        if iter % args.report_interval == 0:
+            total_loss += loss.item()
+
+        if (iter % args.report_interval) == 0:
             logger.info(
                 f'Epoch = [{epoch:3d}/{args.num_epochs:3d}] '
                 f'Iter = [{iter:4d}/{len(data_loader):4d}] '
@@ -99,6 +98,7 @@ def validate(args, model, data_loader, accelerator: Accelerator):
 
 
 def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_best):
+    model_name = f"model{epoch}.pt"
     torch.save(
         {
             'epoch': epoch,
@@ -108,7 +108,7 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
             'best_val_loss': best_val_loss,
             'exp_dir': exp_dir
         },
-        f=exp_dir / 'model.pt'
+        f=exp_dir / model_name
     )
     if is_new_best:
         shutil.copyfile(exp_dir / 'model.pt', exp_dir / 'best_model.pt')
@@ -162,6 +162,11 @@ def train(args):
                        sens_chans=args.sens_chans,
                        unet=args.unet,
                        config= args.config) #todo : unet args add
+    elif args.model == 'eamri':
+        logger.info("model: eamri")
+        model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
+                      fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
+
 
         # load_model(args, model) # no pretrained model for now
 
@@ -180,7 +185,7 @@ def train(args):
         if args.scheduler == "cosine":
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
         elif args.scheduler == "step":
-            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1) # todo : step size, gamma args add
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
         else:
             raise NotImplementedError("scheduler not found")
 
@@ -190,6 +195,9 @@ def train(args):
         loss_type = torch.nn.MSELoss().to(device=device)
     elif args.loss == "mse+edge":
         loss_type = EdgeMAELoss().to(device=device)
+    else:
+        raise NotImplementedError("loss not found")
+
 
     best_val_loss = 1.
     start_epoch = 0
@@ -209,8 +217,7 @@ def train(args):
         model, optimizer, scheduler, train_loader, val_loader = accelerator.prepare(model, optimizer, scheduler, train_loader, val_loader)
 
     # test saving
-    save_model(args, args.exp_dir, 0, accelerator.unwrap_model(model), optimizer, best_val_loss,
-               False)
+    save_model(args, args.exp_dir, 0, accelerator.unwrap_model(model), optimizer, best_val_loss, False)
 
     for epoch in range(start_epoch, args.num_epochs):
         logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')

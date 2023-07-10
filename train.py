@@ -55,6 +55,9 @@ def parse():
 
     # scheduler
     parser.add_argument('--scheduler', type=str, default=None, choices = ["cosine", "step"], help='Scheduler to train')
+    parser.add_argument('--step_size', type=int, default=5, help='Step size for scheduler')
+    parser.add_argument('--gamma', type=float, default=0.5, help='Gamma for scheduler')
+
 
     # loss
     parser.add_argument('--loss', type=str, default='mse', choices = ["mse", "ssim", "mse+edge"], help='Loss to train')

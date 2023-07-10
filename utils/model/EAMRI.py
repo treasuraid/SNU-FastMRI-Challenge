@@ -1,21 +1,17 @@
 """
 official network architecture for EAMRI
 author: huihui
+modified by: jinpil Choi
 """
 
 import sys
-
 sys.path.insert(0, '..')
+
 import torch
 from torch import nn
-import torch.utils.checkpoint as checkpoint
 import transforms_simple_eamri as T
-from torch.nn import functional as F
-import pdb
-import numpy as np
-# from .networkUtil import *
 from eamri_networkutil import dilatedConvBlock, DC_multicoil, rearrange, LayerNorm, SensitivityModel, default_conv
-import math
+
 
 
 class rdn_convBlock(nn.Module):
@@ -228,7 +224,6 @@ class EAMRI(nn.Module):
     """
     12 DAM + transformer block
     """
-
     def __init__(self,
                  indim=2,
                  edgeFeat=16,
@@ -272,41 +267,43 @@ class EAMRI(nn.Module):
         x1 = x1.permute(0, 3, 1, 2).contiguous()  # (B,2,H,W)
         return x1
 
-    def forward(self, x1, y, m):  # (image, kspace, mask)
+    def forward(self, masked_kspace, mask):  # (image, kspace, mask)
         """
-        input:
-            x1: (B, coils, H, W, 2) zero-filled image
-            e0: (B, 2, H, W) edge of zim
-            y: under-sampled kspace
-            m: mask
+        :param masked_kspace: (B, coils, H, W, 2)
+        :param mask: (B, 1, 1, W, 1)
+        """
+        # data consistency
+        x1 = T.ifft2(masked_kspace)  # (B, coils, H, W, 2)      # zero-filled image (B, coils, H, W, 2)
 
-        """
+        # stack mask to be (B, 1, H, W, 1)
+        m = mask.repeat(1, 1, x1.shape[-3], 1, 1)  # (B, 1, H, W, 1)
+
         # estimated sens map
-        sens_map = self.sens_net(y, m)
+        sens_map = self.sens_net(masked_kspace, m)
 
         x1 = self.reduce(x1, sens_map)  # (B, 2, H, W)
 
         # image head
-        x1 = self.imHead(x1, y, m, sens_map)  # (B, 2, H, W)
+        x1 = self.imHead(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
 
         # first stage
-        x2 = self.net1(x1, y, m, sens_map)  # (B, 2, H, W)
+        x2 = self.net1(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
         e2 = self.edgeNet(x1)  # (B, 1, H, W)
-        x1 = self.fuse1(x2, e2, y, m, sens_map)
+        x1 = self.fuse1(x2, e2, masked_kspace, m, sens_map)
 
         # second stage
-        x2 = self.net2(x1, y, m, sens_map)  # (B, 2, H, W)
+        x2 = self.net2(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
         e3 = self.edgeNet(x1)
-        x1 = self.fuse2(x2, e3, y, m, sens_map)
+        x1 = self.fuse2(x2, e3, masked_kspace, m, sens_map)
 
         # third stage
-        x2 = self.net3(x1, y, m, sens_map)  # (B, 2, H, W)
+        x2 = self.net3(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
         e4 = self.edgeNet(x1)
-        x1 = self.fuse3(x2, e4, y, m, sens_map)
+        x1 = self.fuse3(x2, e4, masked_kspace, m, sens_map)
 
-        x2 = self.net4(x1, y, m, sens_map)  # (B, 2, H, W)
+        x2 = self.net4(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
         e5 = self.edgeNet(x1)
-        result = self.fuse4(x2, e5, y, m, sens_map)
+        result = self.fuse4(x2, e5, masked_kspace, m, sens_map)
         height = result.shape[-2]
         width = result.shape[-1]
 
@@ -315,7 +312,7 @@ class EAMRI(nn.Module):
 
         result = (result ** 2).sum(dim=1).sqrt().unsqueeze(dim = 1) # (B, H, W)
 
-        return [e2, e3, e4, e5, result]
+        return torch.stack([e2,e3,e4,e5], dim = 0), result
 
 
 if __name__ == "__main__":
@@ -325,7 +322,7 @@ if __name__ == "__main__":
     # original flow input
 
     masked_kspace = torch.randn(1, 14, 768, 396, 2) # b coils h w 2
-    mask = torch.randn(1, 1, 768, 396, 1).byte() # b 1 1 w 1
+    mask = torch.randn(1, 1, 1, 396, 1).byte() # b 1 1 w 1
 
     from fastmri import fft2c
     image_complex = fft2c(masked_kspace)
@@ -346,7 +343,7 @@ if __name__ == "__main__":
 
     print(sum(p.numel() for p in model.parameters()))
 
-    output = model(image_complex, masked_kspace, mask)
+    output = model(masked_kspace, mask)
 
     for i in range(len(output)):
         print(output[i].shape)

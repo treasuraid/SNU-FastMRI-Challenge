@@ -19,15 +19,15 @@ class EdgeMAELoss(nn.Module):
         self.edge_weight = edge_weight
         self.mse_loss = nn.MSELoss()
 
-    def forward(self, edge_preds, pred, edge_target, target):
+    def forward(self, preds, targets, **kwargs):
         """
-        :param edge_preds: [number of edge preds, 1, H, W]
-        :param pred: image prediction [1, H, W]
-        :param edge_target: edge target [1, H, W]
-        :param target: image target [1, H, W]
-        :return: edge_weights * edge loss + mse loss
+        :param preds: list of predictions
+        :param targets: list of targets
+        :return: loss
         """
         sum_edge_error = 0
+        pred, edge_preds = preds
+        target, edge_target = targets
         for i in range(edge_preds.shape[0]):
             sum_edge_error += self.mse_loss(edge_preds[i], edge_target)
 
