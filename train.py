@@ -53,8 +53,18 @@ def parse():
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
 
+    # scheduler
+    parser.add_argument('--scheduler', type=str, default=None, choices = ["cosine", "step"], help='Scheduler to train')
+
+    # loss
+    parser.add_argument('--loss', type=str, default='mse', choices = ["mse", "ssim", "mse+edge"], help='Loss to train')
+    parser.add_argument("--edge_weight", type=float, default=1, help="Weight for edge loss") # 1 in original EAMRI paper
+
+
     args = parser.parse_args()
-    
+
+
+
     
     return args
 

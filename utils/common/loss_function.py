@@ -7,6 +7,34 @@ LICENSE file in the root directory of this source tree.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import List
+
+class EdgeMAELoss(nn.Module):
+    """
+    Edge + MSE loss for training eamri
+    """
+
+    def __init(self, edge_weight = 1):
+        super().__init__()
+        self.edge_weight = edge_weight
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, edge_preds, pred, edge_target, target):
+        """
+        :param edge_preds: [number of edge preds, 1, H, W]
+        :param pred: image prediction [1, H, W]
+        :param edge_target: edge target [1, H, W]
+        :param target: image target [1, H, W]
+        :return: edge_weights * edge loss + mse loss
+        """
+        sum_edge_error = 0
+        for i in range(edge_preds.shape[0]):
+            sum_edge_error += self.mse_loss(edge_preds[i], edge_target)
+
+        mse_pred_loss = self.mse_loss(pred, target)
+        return sum_edge_error * self.edge_weight + mse_pred_loss
+
+
 
 
 class SSIMLoss(nn.Module):

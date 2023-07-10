@@ -16,15 +16,46 @@ class DataTransform:
     def __init__(self, isforward, max_key):
         self.isforward = isforward
         self.max_key = max_key
+        # whether to use new mask algorithm
     def __call__(self, mask, input, target, attrs, fname, slice):
         if not self.isforward:
-            target = to_tensor(target)
+            target = to_tensor(target) # full image of 384 x 384
             maximum = attrs[self.max_key]
         else:
             target = -1
             maximum = -1
-        
-        kspace = to_tensor(input * mask)
-        kspace = torch.stack((kspace.real, kspace.imag), dim=-1)
-        mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
-        return mask, kspace, target, maximum, fname, slice
+
+        masked_kspace = to_tensor(input * mask)
+        masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
+        mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
+        return mask, masked_kspace, target, maximum, fname, slice
+
+
+class RandomDataTransform(DataTransform):
+    def __init(self, isforward, max_key, sobel_edge = False) :
+        super().__init__(isforward, max_key)
+        self.sobel_edge = sobel_edge
+    def __call__(self, mask, input, target, attrs, fname, slice):
+        if not self.isforward:
+            target = to_tensor(target) # full image of 384 x 384
+            maximum = attrs[self.max_key]
+        else:
+            target = -1
+            maximum = -1
+
+        mask = RandomMaskFunc(...)
+        masked_kspace = to_tensor(input * mask)
+        masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
+        mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
+
+        sobel_edge = getSobel(...)
+
+        return mask, masked_kspace, target, maximum, fname, slice,
+
+
+
+def getSobel() :
+    pass
+def RandomMaskFunc() :
+
+    pass

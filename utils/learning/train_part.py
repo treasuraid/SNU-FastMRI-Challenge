@@ -12,7 +12,7 @@ import copy
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import *
-from utils.common.loss_function import SSIMLoss
+from utils.common.loss_function import SSIMLoss, EdgeMAELoss
 from utils.model.varnet import VarNet
 from utils.model.swin_unet import SwinUnet
 import os
@@ -21,7 +21,7 @@ from accelerate import Accelerator
 from logging import getLogger
 
 logger = getLogger(__name__)
-logger.setLevel("DEBUG")
+logger.setLevel("INFO")
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, accelerator: Accelerator):
     logger.debug(f"Running Training Epoch {epoch}")
@@ -175,7 +175,21 @@ def train(args):
     
     # model = model.to(device=device)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
-    loss_type = SSIMLoss().to(device=device)
+    scheduler = None
+    if args.scheduler is not None:
+        if args.scheduler == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+        elif args.scheduler == "step":
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1) # todo : step size, gamma args add
+        else:
+            raise NotImplementedError("scheduler not found")
+
+    if args.loss == "ssim":
+        loss_type = SSIMLoss().to(device=device)
+    elif args.loss == "mse":
+        loss_type = torch.nn.MSELoss().to(device=device)
+    elif args.loss == "mse+edge":
+        loss_type = EdgeMAELoss().to(device=device)
 
     best_val_loss = 1.
     start_epoch = 0
@@ -189,10 +203,10 @@ def train(args):
     accelerator = Accelerator(mixed_precision=args.mixed_precision,
                               gradient_accumulation_steps=args.gradient_accumulation)
 
-    # todo : fp16, gradient_accumulation to args
-    device = accelerator.device
-
-    model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
+    if args.scheduler is None :
+        model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
+    else :
+        model, optimizer, scheduler, train_loader, val_loader = accelerator.prepare(model, optimizer, scheduler, train_loader, val_loader)
 
     # test saving
     save_model(args, args.exp_dir, 0, accelerator.unwrap_model(model), optimizer, best_val_loss,
