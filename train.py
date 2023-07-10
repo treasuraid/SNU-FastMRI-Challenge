@@ -44,7 +44,7 @@ def parse():
     parser.add_argument("--mask", default=False, action = "store_true", help="Use mask for training Loss")
 
     # model
-    parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "swin"], help='Model to train')
+    parser.add_argument('--model', type=str, default='varnet', choices = ["vanet", "eamri"], help='Model to train')
 
 
     # accelerator

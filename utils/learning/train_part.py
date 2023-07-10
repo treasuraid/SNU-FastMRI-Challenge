@@ -166,11 +166,7 @@ def train(args):
         logger.info("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
                       fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
-
-
-        # load_model(args, model) # no pretrained model for now
-
-    else :
+    elseg:
         logger.error("model not found")
         raise NotImplementedError
     
