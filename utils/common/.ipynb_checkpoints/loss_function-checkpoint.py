@@ -18,8 +18,9 @@ class EdgeMAELoss(nn.Module):
         super(EdgeMAELoss, self).__init__()
         self.edge_weight = edge_weight
         self.mse_loss = nn.L1Loss()
+        self.ssim = SSIMLoss()
 
-    def forward(self, preds, targets, maximum):
+    def forward(self, preds, targets, maximum, mode = "train"):
         """
         :param preds: list of predictions
         :param targets: list of targets
@@ -30,10 +31,13 @@ class EdgeMAELoss(nn.Module):
         target, edge_target = targets
         
         for i in range(edge_preds.shape[0]):
-            sum_edge_error += self.mse_loss(edge_preds[i], edge_target)
+            sum_edge_error += self.mse_loss(edge_preds[i][0], edge_target)
 
-        mse_pred_loss = self.mse_loss(pred, target)
-        return sum_edge_error * self.edge_weight + mse_pred_loss
+        mse_pred_loss = self.mse_loss(pred[0], target)
+        if mode == "train":
+            return sum_edge_error * self.edge_weight + mse_pred_loss
+        elif mode == "test" :
+            return sum_edge_error * self.edge_weight + mse_pred_loss, 1- self.ssim(pred[0],target,maximum)[0]
 
 
 
@@ -57,7 +61,7 @@ class SSIMLoss(nn.Module):
         NP = win_size ** 2
         self.cov_norm = NP / (NP - 1)
 
-    def forward(self, X, Y, data_range):
+    def forward(self, X, Y, data_range, mode = "train"):
         X = X.unsqueeze(1)
         Y = Y.unsqueeze(1)
         data_range = data_range[:, None, None, None]
@@ -80,4 +84,4 @@ class SSIMLoss(nn.Module):
         D = B1 * B2
         S = (A1 * A2) / D
 
-        return 1 - S.mean()
+        return 1 - S.mean(), None

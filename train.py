@@ -48,7 +48,7 @@ def parse():
 
 
     # accelerator
-    parser.add_argument('--gradient_accumulation', type=int, default=1, help='Gradient accumulation')
+    parser.add_argument('--gradient_accumulation', type=int, default=4, help='Gradient accumulation')
     parser.add_argument('--mixed_precision', type=str, default="fp16", choices =  ["no", "fp16" ,"fp8", "bp8"], help='Use mixed precision training')
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")

@@ -31,13 +31,13 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     len_loader = len(data_loader)
     total_loss = 0.
 
-    for iter, data in enumerate(data_loader):
+    for iter, data in enumerate(tqdm(data_loader)):
 
         with accelerator.accumulate(model):
             mask, kspace, target, maximum, _, _, = data
-            output = model(kspace, mask) # tuple[tensor, tensor] or tensor
-
-            loss = loss_type(output, target, maximum)
+            _, output = model(kspace, mask) # tuple[tensor, tensor] or tensor
+            
+            loss, ssim = loss_type(output[0], target[0], maximum, "test")
             optimizer.zero_grad()
             accelerator.backward(loss)
             optimizer.step()
@@ -165,7 +165,7 @@ def train(args):
     elif args.model == 'eamri':
         logger.info("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
-                      fNums=[48,72,72,72,72], n_MSRB=3, shift=True)
+                      fNums=[48,48,48,48,72], n_MSRB=3, shift=True)
     else:
         logger.error("model not found")
         raise NotImplementedError
@@ -206,7 +206,7 @@ def train(args):
     # accelerator settings
     accelerator = Accelerator(mixed_precision=args.mixed_precision,
                               gradient_accumulation_steps=args.gradient_accumulation)
-
+    
     if args.scheduler is None :
         model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
     else :
@@ -218,6 +218,7 @@ def train(args):
     for epoch in range(start_epoch, args.num_epochs):
         logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, None, loss_type, accelerator)
+        torch.cuda.empty_cache()
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader,
                                                                                       accelerator)
 
@@ -229,7 +230,7 @@ def train(args):
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
         num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
-
+        
         val_loss = val_loss / num_subjects
 
         is_new_best = val_loss < best_val_loss
