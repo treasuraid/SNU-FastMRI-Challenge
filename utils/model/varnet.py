@@ -7,6 +7,7 @@ LICENSE file in the root directory of this source tree.
 
 import math
 from typing import List, Tuple
+from torch.utils.checkpoint import checkpoint_sequential
 
 from omegaconf import DictConfig, ListConfig
 
@@ -250,9 +251,17 @@ class VarNet(nn.Module):
         sens_maps = self.sens_net(masked_kspace, mask)
         kspace_pred = masked_kspace.clone()
 
-        for cascade in self.cascades:
-            kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+#         for cascade in self.cascades:
+#             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+        
+        segments = 4
+        # get the modules in the model. These modules should be in the order
+        # the model should be executed
+        modules = [module for k, module in self.cascades._modules.items()]
 
+        # now call the checkpoint API and get the output
+        out = checkpoint_sequential(modules, segments, kspace_pred,masked_kspace,mask,sens_maps)
+            
         # kspace_pred : [batch, slices, height, width, 2]
         result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
         height = result.shape[-2]

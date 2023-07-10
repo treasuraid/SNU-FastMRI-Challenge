@@ -40,9 +40,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             mask, kspace, target, maximum, _, _, = data
             output = model(kspace, mask) # tuple[tensor, tensor] or tensor
 
-            modules = [module for k, module in model._modules.items()]
-            output = checkpoint_sequential(modules, segments, (kspace, mask))
-            loss = loss_type(output, target, maximum)
+#             modules = [module for k, module in model._modules.items()]
+#             output = checkpoint_sequential(modules, segments, kspace, mask)
+            loss = loss_type(output, target[0], maximum)
             optimizer.zero_grad()
             accelerator.backward(loss)
             optimizer.step()
