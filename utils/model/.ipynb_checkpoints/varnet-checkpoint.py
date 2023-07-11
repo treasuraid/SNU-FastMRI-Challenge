@@ -8,6 +8,7 @@ LICENSE file in the root directory of this source tree.
 import math
 from typing import List, Tuple
 from torch.utils.checkpoint import checkpoint_sequential
+import torch.utils.checkpoint as checkpoint
 
 from omegaconf import DictConfig, ListConfig
 
@@ -235,7 +236,7 @@ class VarNet(nn.Module):
         super().__init__()
 
         self.sens_net = SensitivityModel(sens_chans, sens_pools)
-
+        
         if unet == "plain":
             self.cascades = nn.ModuleList(
                 [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
@@ -246,30 +247,38 @@ class VarNet(nn.Module):
             self.cascades = nn.ModuleList(
                 [VarNetBlock(SwinUnet(config)) for _ in range(num_cascades)]
             )
+     
+    
+    def custom(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0], inputs[1], inputs[2], inputs[3])
+            return inputs
+        return custom_forward
+
+    def print(self):
+        for param in self.cascades[0].parameters():
+            print(param.data)
 
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         sens_maps = self.sens_net(masked_kspace, mask)
         kspace_pred = masked_kspace.clone()
 
-#         for cascade in self.cascades:
+        for cascade in self.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
+#             kspace_pred =  checkpoint.checkpoint(self.custom(self.kspace_pred), (kspace_pred, masked_kspace, mask, sens_maps))
 #             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
         
-        segments = 4
-        # get the modules in the model. These modules should be in the order
-        # the model should be executed
-        modules = [module for k, module in self.cascades._modules.items()]
-
-        # now call the checkpoint API and get the output
-        out = checkpoint_sequential(modules, segments, kspace_pred,masked_kspace,mask,sens_maps)
-            
+        middle_out = kspace_pred
+                
         # kspace_pred : [batch, slices, height, width, 2]
-        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(middle_out)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
         height = result.shape[-2]
         width = result.shape[-1]
-
-
-        return result[..., (height - 384) // 2 : 384 + (height - 384) // 2, (width - 384) // 2 : 384 + (width - 384) // 2]
-
+        
+        return result[..., (height - 384) // 2: 384 + (height - 384) // 2,
+                 (width - 384) // 2: 384 + (width - 384) // 2]
+    
+    
 
 class VarNetBlock(nn.Module):
     """

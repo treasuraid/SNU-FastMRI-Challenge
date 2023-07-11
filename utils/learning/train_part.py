@@ -29,29 +29,32 @@ logger.setLevel("INFO")
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, accelerator: Accelerator):
     logger.debug(f"Running Training Epoch {epoch}")
     model.train()
+    model.to("cuda:0")
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
     total_loss = 0.
 
-    segments = 2
     for iter, data in enumerate(tqdm(data_loader)):
-
-        with accelerator.accumulate(model):
-            mask, kspace, target, maximum, _, _, = data
-            output = model(kspace, mask) # tuple[tensor, tensor] or tensor
-
-#             modules = [module for k, module in model._modules.items()]
-#             output = checkpoint_sequential(modules, segments, kspace, mask)
-            loss = loss_type(output, target[0], maximum)
-            optimizer.zero_grad()
-            accelerator.backward(loss)
+#         with accelerator.accumulate(model):
+        mask, kspace, target, maximum, _, _, = data
+        mask= mask.cuda()
+        kspace= kspace.cuda()
+        target= target[0].cuda()
+        maximum = maximum.cuda()
+        output = model(kspace, mask) # tuple[tensor, tensor] or tensor
+        loss = loss_type(output, target, maximum) / args.gradient_accumulation
+#         print(output.shape,target.shape,loss)
+        loss.backward()
+        
+        if (iter % args.gradient_accumulation) == 0:
             optimizer.step()
+            optimizer.zero_grad()
+        
 
+        if args.scheduler is not None:
+            scheduler.step()
 
-            if args.scheduler is not None:
-                scheduler.step()
-
-            total_loss += loss.item()
+        total_loss += loss.item()
 
         if (iter % args.report_interval) == 0:
             logger.info(
@@ -79,8 +82,11 @@ def validate(args, model, data_loader, accelerator: Accelerator):
     start = time.perf_counter()
 
     with torch.no_grad():
-        for iter, data in enumerate(data_loader):
+        for iter, data in enumerate(tqdm(data_loader)):
             mask, kspace, target, _, fnames, slices = data
+            mask = mask.cuda()
+            kspace = kspace.cuda()
+            target = target[0].cuda()
             output = model(kspace, mask)
 
             for i in range(output.shape[0]):
@@ -118,7 +124,7 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
         f=exp_dir / model_name
     )
     if is_new_best:
-        shutil.copyfile(exp_dir / 'model.pt', exp_dir / 'best_model.pt')
+        shutil.copyfile(exp_dir / model_name , exp_dir / 'best_model.pt')
 
 
 # no pretrained model for now
@@ -178,7 +184,7 @@ def train(args):
         raise NotImplementedError
     
     # print model parameters
-    
+    model.to("cuda:0")
     print_model_num_parameters(model)
     
     # model = model.to(device=device)
@@ -214,14 +220,15 @@ def train(args):
     accelerator = Accelerator(mixed_precision=args.mixed_precision,
                               gradient_accumulation_steps=args.gradient_accumulation)
 
-    if args.scheduler is None :
-        model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
-    else :
-        model, optimizer, scheduler, train_loader, val_loader = accelerator.prepare(model, optimizer, scheduler, train_loader, val_loader)
+#     if args.scheduler is None :
+#         model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
+#     else :
+#         model, optimizer, scheduler, train_loader, val_loader = accelerator.prepare(model, optimizer, scheduler, train_loader, val_loader)
 
     # test saving
-    save_model(args, args.exp_dir, 0, accelerator.unwrap_model(model), optimizer, best_val_loss, False)
-
+    save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
+    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader,
+                                                                                      accelerator)
     for epoch in range(start_epoch, args.num_epochs):
         logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, None, loss_type, accelerator)
@@ -242,7 +249,7 @@ def train(args):
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
 
-        save_model(args, args.exp_dir, epoch + 1, accelerator.unwrap_model(model), optimizer, best_val_loss,
+        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss,
                    is_new_best)
         logger.info(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
