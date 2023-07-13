@@ -3,6 +3,7 @@ import shutil
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast, GradScaler
 import time
 import requests
 from tqdm import tqdm
@@ -15,44 +16,54 @@ from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss, EdgeMAELoss
 from utils.model.varnet import VarNet
 from utils.model.EAMRI import EAMRI
-from utils.model.swin_unet import SwinUnet
-import torch.utils.checkpoint as checkpoint
-from torch.utils.checkpoint import checkpoint_sequential
 import os
 
-from accelerate import Accelerator
 from logging import getLogger
 
 logger = getLogger(__name__)
 logger.setLevel("INFO")
 
-def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, accelerator: Accelerator):
+def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type):
     logger.debug(f"Running Training Epoch {epoch}")
+
     model.train()
     model.to("cuda:0")
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
+    scaler = GradScaler()
     total_loss = 0.
 
-    for iter, data in enumerate(tqdm(data_loader)):
-#         with accelerator.accumulate(model):
-        mask, kspace, target, maximum, _, _, = data
-        mask= mask.cuda()
-        kspace= kspace.cuda()
-        target= target.cuda()
-        maximum = maximum.cuda()
-        output = model(kspace, mask) # tuple[tensor, tensor] or tensor
-        loss = loss_type(output, target, maximum) / args.gradient_accumulation
-#         print(output.shape,target.shape,loss)
-        loss.backward()
-        
-        if (iter % args.gradient_accumulation) == 0:
-            optimizer.step()
-            optimizer.zero_grad()
-        
 
-        if args.scheduler is not None:
-            scheduler.step()
+    for iter, data in enumerate(tqdm(data_loader)):
+        mask, kspace, target, maximum, _, _, = data
+        mask= mask.to("cuda:0")
+        kspace= kspace.to("cuda:0")
+        target= target.to("cuda:0")
+        maximum = maximum.to("cuda:0")
+
+        optimizer.zero_grad()
+        if args.amp:
+            with autocast():
+                output = model(kspace, mask)
+                loss = loss_type(output, target, maximum) / args.grad_accmulation
+            scaler.scale(loss).backward()
+
+        else:
+            output = model(kspace, mask)
+            loss = loss_type(output, target, maximum) / args.grad_accmulation
+            loss.backward()
+
+        if ((iter + 1) % args.grad_accumulation) == 0:
+            if args.grad_norm > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
+            if args.amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+
+            if args.scheduler is not None:
+                scheduler.step()
 
         total_loss += loss.item()
 
@@ -75,7 +86,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     return total_loss, time.perf_counter() - start_epoch
 
 
-def validate(args, model, data_loader, accelerator: Accelerator):
+def validate(args, model, data_loader, device = "cuda:0"):
     model.eval()
     reconstructions = defaultdict(dict)
     targets = defaultdict(dict)
@@ -84,9 +95,10 @@ def validate(args, model, data_loader, accelerator: Accelerator):
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
             mask, kspace, target, _, fnames, slices = data
-            mask = mask.cuda()
-            kspace = kspace.cuda()
-            target = target.cuda()
+            mask = mask.to(device)
+            kspace = kspace.to(device)
+            target = target.to(device)
+
             output = model(kspace, mask)
 
             for i in range(output.shape[0]):
@@ -98,13 +110,9 @@ def validate(args, model, data_loader, accelerator: Accelerator):
                 
 
     for fname in reconstructions:
-        reconstructions[fname] = np.stack(
-            [out for _, out in sorted(reconstructions[fname].items())]
-        )
+        reconstructions[fname] = np.stack([out for _, out in sorted(reconstructions[fname].items())])
     for fname in targets:
-        targets[fname] = np.stack(
-            [out for _, out in sorted(targets[fname].items())]
-        )
+        targets[fname] = np.stack([out for _, out in sorted(targets[fname].items())])
     metric_loss = sum([ssim_loss(targets[fname], reconstructions[fname]) for fname in reconstructions])
     num_subjects = len(reconstructions)
     return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
@@ -112,6 +120,7 @@ def validate(args, model, data_loader, accelerator: Accelerator):
 
 def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_best):
     model_name = f"model{epoch}.pt"
+
     torch.save(
         {
             'epoch': epoch,
@@ -127,39 +136,6 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
         shutil.copyfile(exp_dir / model_name , exp_dir / 'best_model.pt')
 
 
-# no pretrained model for now
-def download_model(url, fname):
-    response = requests.get(url, timeout=10, stream=True)
-
-    chunk_size = 8 * 1024 * 1024  # 8 MB chunks
-    total_size_in_bytes = int(response.headers.get("content-length", 0))
-    progress_bar = tqdm(
-        desc="Downloading state_dict",
-        total=total_size_in_bytes,
-        unit="iB",
-        unit_scale=True,
-    )
-
-    with open(fname, "wb") as fh:
-        for chunk in response.iter_content(chunk_size):
-            progress_bar.update(len(chunk))
-            fh.write(chunk)
-
-
-def load_model(args, model: torch.nn.Module):
-    VARNET_FOLDER = "https://dl.fbaipublicfiles.com/fastMRI/trained_models/varnet/"
-    MODEL_FNAMES = "brain_leaderboard_state_dict.pt"
-    if not Path(MODEL_FNAMES).exists():
-        url_root = VARNET_FOLDER
-        download_model(url_root + MODEL_FNAMES, MODEL_FNAMES)
-
-    pretrained = torch.load(MODEL_FNAMES)
-    pretrained_copy = copy.deepcopy(pretrained)
-    for layer in pretrained_copy.keys():
-        if layer.split('.', 2)[1].isdigit() and (args.cascade <= int(layer.split('.', 2)[1]) <= 11):
-            del pretrained[layer]
-    model.load_state_dict(pretrained)
-
 
 def train(args):
 
@@ -174,22 +150,21 @@ def train(args):
                        chans=args.chans,
                        sens_chans=args.sens_chans,
                        unet=args.unet,
-                       config= args.config) #todo : unet args add
+                       config= args.config)
+
     elif args.model == 'eamri':
         logger.info("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
-                      fNums=[48,72,72,72,72], n_MSRB=3, shift=True)
+                      fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
     else:
         logger.error("model not found")
         raise NotImplementedError
-    
-    # print model parameters
-    model.to("cuda:0")
     print_model_num_parameters(model)
-    
-    # model = model.to(device=device)
+
+    model = model.to(device=device)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
-    scheduler = None
+
+    # get scheduler
     if args.scheduler is not None:
         if args.scheduler == "cosine":
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
@@ -197,7 +172,10 @@ def train(args):
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
         else:
             raise NotImplementedError("scheduler not found")
+    else :
+        scheduler = None
 
+    # get loss function
     if args.loss == "ssim":
         loss_type = SSIMLoss().to(device=device)
     elif args.loss == "mse":
@@ -210,47 +188,46 @@ def train(args):
 
     best_val_loss = 1.
     start_epoch = 0
-
-    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False)
-
     val_loss_log = np.empty((0, 2))
 
-    # accelerator settings
-    accelerator = Accelerator(mixed_precision=args.mixed_precision,
-                              gradient_accumulation_steps=args.gradient_accumulation)
+    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug= args.aug, edge= args.edge)
+    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug = False, edge= args.edge)
 
-#     if args.scheduler is None :
-#         model, optimizer, train_loader, val_loader = accelerator.prepare(model, optimizer, train_loader, val_loader)
-#     else :
-#         model, optimizer, scheduler, train_loader, val_loader = accelerator.prepare(model, optimizer, scheduler, train_loader, val_loader)
 
-    # test saving
+
+    # test saving and validation
     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader,
-                                                                                      accelerator)
-    for epoch in range(start_epoch, args.num_epochs):
-        logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, None, loss_type, accelerator)
-        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader,
-                                                                                      accelerator)
+    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
 
+
+    for epoch in range(start_epoch, args.num_epochs):
+
+        logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
+        logger.info(f"Actual Batch size: {args.batch_size} * {args.gradient_accumulation} = "
+                    f"{args.batch_size * args.gradient_accumulation}")
+
+        # train
+        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, None, loss_type)
+
+        # validate
+        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+
+        # save loss
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
         file_path = os.path.join(args.val_loss_dir, "val_loss_log")
         np.save(file_path, val_loss_log)
         logger.info(f"loss file saved! {file_path}")
 
+        # cal loss to tensor
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
         num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
-
         val_loss = val_loss / num_subjects
-
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
 
-        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss,
-                   is_new_best)
+        # save model
+        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss,is_new_best)
         logger.info(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
@@ -260,8 +237,45 @@ def train(args):
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
 
+        # save reconstructions if new best
         if is_new_best:
             logger.info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
             start = time.perf_counter()
             save_reconstructions(reconstructions, args.val_dir, targets=targets, inputs=inputs)
             logger.info(f'ForwardTime = {time.perf_counter() - start:.4f}s')
+
+
+
+def load_model(args, model: torch.nn.Module):
+    VARNET_FOLDER = "https://dl.fbaipublicfiles.com/fastMRI/trained_models/varnet/"
+    MODEL_FNAMES = "brain_leaderboard_state_dict.pt"
+
+    def download_model(url, fname):
+        response = requests.get(url, timeout=10, stream=True)
+
+        chunk_size = 8 * 1024 * 1024  # 8 MB chunks
+        total_size_in_bytes = int(response.headers.get("content-length", 0))
+        progress_bar = tqdm(
+            desc="Downloading state_dict",
+            total=total_size_in_bytes,
+            unit="iB",
+            unit_scale=True,
+        )
+
+        with open(fname, "wb") as fh:
+            for chunk in response.iter_content(chunk_size):
+                progress_bar.update(len(chunk))
+                fh.write(chunk)
+
+
+    if not Path(MODEL_FNAMES).exists():
+        url_root = VARNET_FOLDER
+        download_model(url_root + MODEL_FNAMES, MODEL_FNAMES)
+
+    pretrained = torch.load(MODEL_FNAMES)
+    pretrained_copy = copy.deepcopy(pretrained)
+    for layer in pretrained_copy.keys():
+        if layer.split('.', 2)[1].isdigit() and (args.cascade <= int(layer.split('.', 2)[1]) <= 11):
+            del pretrained[layer]
+    model.load_state_dict(pretrained)
+
