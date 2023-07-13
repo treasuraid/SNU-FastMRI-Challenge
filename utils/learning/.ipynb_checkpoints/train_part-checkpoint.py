@@ -39,7 +39,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         mask, kspace, target, maximum, _, _, = data
         mask= mask.cuda()
         kspace= kspace.cuda()
-        target= target[0].cuda()
+        target= target.cuda()
         maximum = maximum.cuda()
         output = model(kspace, mask) # tuple[tensor, tensor] or tensor
         loss = loss_type(output, target, maximum) / args.gradient_accumulation
@@ -86,7 +86,7 @@ def validate(args, model, data_loader, accelerator: Accelerator):
             mask, kspace, target, _, fnames, slices = data
             mask = mask.cuda()
             kspace = kspace.cuda()
-            target = target[0].cuda()
+            target = target.cuda()
             output = model(kspace, mask)
 
             for i in range(output.shape[0]):
