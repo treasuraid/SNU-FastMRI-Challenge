@@ -20,6 +20,7 @@ logger = getLogger(__name__)
 
 
 def parse():
+
     parser: ArgumentParser = argparse.ArgumentParser(description='Train Varnet on FastMRI challenge Images',
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
@@ -71,13 +72,11 @@ def parse():
     # data
     parser.add_argument("--aug", default=False, action = "store_true", help="Use augmentation for training")
     parser.add_argument("--edge", default=False, action = "store_true", help="Use edge image for training and validation")
+    parser.add_argument("--collate", default=False, action = "store_true", help="Use collate function for training and validation")
 
-
+    parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint") # todo
     args = parser.parse_args()
-
-
-
-    
+    # todo : argument to config file (yaml) for better readability
     return args
 
 if __name__ == '__main__':

@@ -14,10 +14,11 @@ def to_tensor(data):
     return torch.from_numpy(data)
 
 class DataTransform:
-    def __init__(self, isforward, max_key, edge=False ):
+    def __init__(self, isforward, max_key, edge=False, aug=False):
         self.isforward = isforward
         self.max_key = max_key
         self.edge = edge
+        self.aug = aug
         # whether to use new mask algorithm
     def __call__(self, mask, input, target, attrs, fname, slice):
         if not self.isforward:
@@ -27,14 +28,15 @@ class DataTransform:
             target = -1
             maximum = -1
 
+        # todo add augmentation code for input kspace or image
         masked_kspace = to_tensor(input * mask)
         masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
         mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
 
         if self.edge:
-            return mask, masked_kspace, (target,  to_tensor(getSobel(target))), maximum, fname, slice,
+            return mask, masked_kspace, target, getSobel(target), maximum, fname, slice,
         else :
-            return mask, masked_kspace, target, maximum, fname, slice,
+            return mask, masked_kspace, target, -1, maximum, fname, slice,
 
 
 def getSobel(target):
@@ -51,3 +53,31 @@ def getSobel(target):
 def RandomMaskFunc() :
 
     pass
+
+def test_getSobel(image_path):
+
+    target = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    grad =getSobel(target)
+
+    # visualize
+    cv2.imshow('image', target)
+    cv2.imshow('grad', grad)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+def dithering(image : np.ndarray) :
+
+    pass
+
+
+if __name__ == "__main__" :
+    #
+    # image_path = "./sobel_test.png"
+    # test_getSobel(image_path)
+    import h5py
+    kspace_fname = "./brain_acc4_137.h5"
+    with h5py.File(kspace_fname, "r") as hf:
+
+        input = hf["kspace"][0]
+        mask = np.array(hf["mask"])
+

@@ -1,4 +1,5 @@
 import argparse
+import logging
 import shutil
 import numpy as np
 import torch
@@ -21,35 +22,38 @@ import os
 from logging import getLogger
 
 logger = getLogger(__name__)
-logger.setLevel("INFO")
+logger.setLevel(logging.INF0)
 
-def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type):
+
+def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, device=torch.device('cuda:0')):
     logger.debug(f"Running Training Epoch {epoch}")
 
     model.train()
-    model.to("cuda:0")
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
     scaler = GradScaler()
     total_loss = 0.
 
-
     for iter, data in enumerate(tqdm(data_loader)):
         mask, kspace, target, maximum, _, _, = data
-        mask= mask.to("cuda:0")
-        kspace= kspace.to("cuda:0")
-        target= target.to("cuda:0")
-        maximum = maximum.to("cuda:0")
+        mask = mask.to(device)
+        kspace = kspace.to(device)
+        target = target.to(device)
+        maximum = maximum.to(device)
 
         optimizer.zero_grad()
         if args.amp:
             with autocast():
                 output = model(kspace, mask)
+                if args.loss_mask :
+                    output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
                 loss = loss_type(output, target, maximum) / args.grad_accmulation
             scaler.scale(loss).backward()
 
         else:
             output = model(kspace, mask)
+            if args.loss_mask:
+                output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
             loss = loss_type(output, target, maximum) / args.grad_accmulation
             loss.backward()
 
@@ -86,7 +90,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     return total_loss, time.perf_counter() - start_epoch
 
 
-def validate(args, model, data_loader, device = "cuda:0"):
+def validate(args, model, data_loader, device=torch.device("cuda:0")):
     model.eval()
     reconstructions = defaultdict(dict)
     targets = defaultdict(dict)
@@ -104,10 +108,9 @@ def validate(args, model, data_loader, device = "cuda:0"):
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
                 targets[fnames[i]][int(slices[i])] = target[i].cpu().numpy()
-            
-            if (iter%args.report_interval==0 and (iter > 0)) :
+
+            if (iter % args.report_interval == 0 and (iter > 0)):
                 print(f"{iter} validation done")
-                
 
     for fname in reconstructions:
         reconstructions[fname] = np.stack([out for _, out in sorted(reconstructions[fname].items())])
@@ -133,12 +136,10 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
         f=exp_dir / model_name
     )
     if is_new_best:
-        shutil.copyfile(exp_dir / model_name , exp_dir / 'best_model.pt')
-
+        shutil.copyfile(exp_dir / model_name, exp_dir / 'best_model.pt')
 
 
 def train(args):
-
     device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
     torch.cuda.set_device(device)
     logger.info("Current cuda device: %d", torch.cuda.current_device())
@@ -150,15 +151,15 @@ def train(args):
                        chans=args.chans,
                        sens_chans=args.sens_chans,
                        unet=args.unet,
-                       config= args.config)
+                       config=args.config)
 
     elif args.model == 'eamri':
         logger.info("model: eamri")
-        model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3],
-                      fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
+        model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1, 3, 3, 3, 3],
+                      fNums=[48, 96, 96, 96, 96], n_MSRB=3, shift=True)
     else:
-        logger.error("model not found")
-        raise NotImplementedError
+        raise NotImplementedError("model not found")
+
     print_model_num_parameters(model)
 
     model = model.to(device=device)
@@ -172,7 +173,7 @@ def train(args):
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
         else:
             raise NotImplementedError("scheduler not found")
-    else :
+    else:
         scheduler = None
 
     # get loss function
@@ -185,20 +186,17 @@ def train(args):
     else:
         raise NotImplementedError("loss not found")
 
-
     best_val_loss = 1.
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
 
-    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug= args.aug, edge= args.edge)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug = False, edge= args.edge)
-
-
+    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug,
+                                       edge=args.edge)
+    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug=False, edge=args.edge)
 
     # test saving and validation
     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
-
 
     for epoch in range(start_epoch, args.num_epochs):
 
@@ -207,10 +205,10 @@ def train(args):
                     f"{args.batch_size * args.gradient_accumulation}")
 
         # train
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, None, loss_type)
+        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, scheduler, loss_type, device)
 
         # validate
-        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
 
         # save loss
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
@@ -227,7 +225,7 @@ def train(args):
         best_val_loss = min(best_val_loss, val_loss)
 
         # save model
-        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss,is_new_best)
+        save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
         logger.info(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
@@ -243,7 +241,6 @@ def train(args):
             start = time.perf_counter()
             save_reconstructions(reconstructions, args.val_dir, targets=targets, inputs=inputs)
             logger.info(f'ForwardTime = {time.perf_counter() - start:.4f}s')
-
 
 
 def load_model(args, model: torch.nn.Module):
@@ -267,7 +264,6 @@ def load_model(args, model: torch.nn.Module):
                 progress_bar.update(len(chunk))
                 fh.write(chunk)
 
-
     if not Path(MODEL_FNAMES).exists():
         url_root = VARNET_FOLDER
         download_model(url_root + MODEL_FNAMES, MODEL_FNAMES)
@@ -278,4 +274,3 @@ def load_model(args, model: torch.nn.Module):
         if layer.split('.', 2)[1].isdigit() and (args.cascade <= int(layer.split('.', 2)[1]) <= 11):
             del pretrained[layer]
     model.load_state_dict(pretrained)
-
