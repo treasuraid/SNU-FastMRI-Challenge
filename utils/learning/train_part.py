@@ -43,7 +43,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
 
         optimizer.zero_grad()
         if args.amp:
-            with autocast():
+            with autocast(dtype = torch.float32):
                 output = model(kspace, mask)
                 if args.loss_mask :
                     output, target = output*(target>1e-5).float(), target*(target>1e-5).float()

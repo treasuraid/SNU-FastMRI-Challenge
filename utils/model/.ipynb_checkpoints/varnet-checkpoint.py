@@ -11,6 +11,7 @@ from torch.utils.checkpoint import checkpoint_sequential
 import torch.utils.checkpoint as checkpoint
 
 from omegaconf import DictConfig, ListConfig
+from torch.utils.checkpoint import checkpoint_sequential
 
 import fastmri
 import torch

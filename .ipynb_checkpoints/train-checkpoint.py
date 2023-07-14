@@ -52,9 +52,9 @@ def parse():
 
 
     # gradient
-    parser.add_argument('--grad_accumulation', type=int, default=8, help='Gradient accumulation')
+    parser.add_argument('--grad_accumulation', type=int, default=4, help='Gradient accumulation')
     parser.add_argument('--grad_norm', type=float, default=1e8, help='Gradient clipping')
-    parser.add_argument('--amp', default=True, type= bool, help='Use automatic mixed precision training')
+    parser.add_argument('--amp', type= bool, help='Use automatic mixed precision training')
 
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
@@ -87,6 +87,7 @@ if __name__ == '__main__':
     # fix seed
     if args.seed is not None:
         seed_fix(args.seed)
+    
 
     args.exp_dir = '../result' / args.net_name / 'checkpoints'
     args.val_dir = '../result' / args.net_name / 'reconstructions_val'
