@@ -22,11 +22,11 @@ import os
 from logging import getLogger
 
 logger = getLogger(__name__)
-logger.setLevel(logging.INF0)
+logger.setLevel(logging.INFO)
 
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, device=torch.device('cuda:0')):
-    logger.debug(f"Running Training Epoch {epoch}")
+    logger.info(f"Running Training Epoch {epoch}")
 
     model.train()
     start_epoch = start_iter = time.perf_counter()
@@ -35,7 +35,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     total_loss = 0.
 
     for iter, data in enumerate(tqdm(data_loader)):
-        mask, kspace, target, maximum, _, _, = data
+        mask, kspace, target, edge, maximum, _, _, = data
         mask = mask.to(device)
         kspace = kspace.to(device)
         target = target.to(device)
@@ -47,14 +47,14 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
                 output = model(kspace, mask)
                 if args.loss_mask :
                     output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
-                loss = loss_type(output, target, maximum) / args.grad_accmulation
+                loss = loss_type(output, target, maximum) / args.grad_accumulation
             scaler.scale(loss).backward()
 
         else:
             output = model(kspace, mask)
             if args.loss_mask:
                 output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
-            loss = loss_type(output, target, maximum) / args.grad_accmulation
+            loss = loss_type(output, target, maximum) / args.grad_accumulation
             loss.backward()
 
         if ((iter + 1) % args.grad_accumulation) == 0:
@@ -98,7 +98,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
-            mask, kspace, target, _, fnames, slices = data
+            mask, kspace, target, edge, _, fnames, slices = data
             mask = mask.to(device)
             kspace = kspace.to(device)
             target = target.to(device)
@@ -190,19 +190,18 @@ def train(args):
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
 
-    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug,
-                                       edge=args.edge)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug=False, edge=args.edge)
+    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True)
+    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False)
 
     # test saving and validation
-    save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+#     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
+#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
 
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
-        logger.info(f"Actual Batch size: {args.batch_size} * {args.gradient_accumulation} = "
-                    f"{args.batch_size * args.gradient_accumulation}")
+        logger.info(f"Actual Batch size: {args.batch_size} * {args.grad_accumulation} = "
+                    f"{args.batch_size * args.grad_accumulation}")
 
         # train
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, scheduler, loss_type, device)

@@ -20,6 +20,7 @@ logger = getLogger(__name__)
 
 
 def parse():
+
     parser: ArgumentParser = argparse.ArgumentParser(description='Train Varnet on FastMRI challenge Images',
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
@@ -40,16 +41,21 @@ def parse():
 
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed', required=True)
 
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for dataloader")
+
+
     # train loss mask
-    parser.add_argument("--mask", default=False, action = "store_true", help="Use mask for training Loss")
+    parser.add_argument("--loss_mask", default=False, action = "store_true", help="Use mask for training Loss")
 
     # model
     parser.add_argument('--model', type=str, default='varnet', choices = ["varnet", "eamri"], help='Model to train')
 
 
-    # accelerator
-    parser.add_argument('--gradient_accumulation', type=int, default=1, help='Gradient accumulation')
-    parser.add_argument('--mixed_precision', type=str, default="fp16", choices =  ["no", "fp16" ,"fp8", "bp8"], help='Use mixed precision training')
+    # gradient
+    parser.add_argument('--grad_accumulation', type=int, default=8, help='Gradient accumulation')
+    parser.add_argument('--grad_norm', type=float, default=1e8, help='Gradient clipping')
+    parser.add_argument('--amp', default=True, type= bool, help='Use automatic mixed precision training')
+
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
 
@@ -60,23 +66,23 @@ def parse():
 
 
     # loss
-    parser.add_argument('--loss', type=str, default='mse', choices = ["mse", "ssim", "edge"], help='Loss to train')
+    parser.add_argument('--loss', type=str, default='ssim', choices = ["mse", "ssim", "edge"], help='Loss to train')
     parser.add_argument("--edge_weight", type=float, default=1, help="Weight for edge loss") # 1 in original EAMRI paper
 
+    # data
+    parser.add_argument("--aug", default=False, action = "store_true", help="Use augmentation for training")
+    parser.add_argument("--edge", default=False, action = "store_true", help="Use edge image for training and validation")
+    parser.add_argument("--collate", default=False, action = "store_true", help="Use collate function for training and validation")
 
+    parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint") # todo
     args = parser.parse_args()
-
-
-
-    
+    # todo : argument to config file (yaml) for better readability
     return args
 
 if __name__ == '__main__':
     args = parse()
 
     # log actual batch size
-
-    logger.info(f"Actual Batch size: {args.batch_size} * {args.gradient_accumulation} = {args.batch_size * args.gradient_accumulation}")
 
     # fix seed
     if args.seed is not None:

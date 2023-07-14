@@ -41,7 +41,7 @@ def parse():
 
     parser.add_argument('--seed', type=int, default=430, help='Fix random seed', required=True)
 
-    parser.add_argument("num_workers", type=int, default=4, help="Number of workers for dataloader")
+    parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for dataloader")
 
 
     # train loss mask
@@ -52,7 +52,7 @@ def parse():
 
 
     # gradient
-    parser.add_argument('--grad_accumulation', type=int, default=1, help='Gradient accumulation')
+    parser.add_argument('--grad_accumulation', type=int, default=8, help='Gradient accumulation')
     parser.add_argument('--grad_norm', type=float, default=1e8, help='Gradient clipping')
     parser.add_argument('--amp', default=True, type= bool, help='Use automatic mixed precision training')
 
@@ -66,7 +66,7 @@ def parse():
 
 
     # loss
-    parser.add_argument('--loss', type=str, default='mse', choices = ["mse", "ssim", "edge"], help='Loss to train')
+    parser.add_argument('--loss', type=str, default='ssim', choices = ["mse", "ssim", "edge"], help='Loss to train')
     parser.add_argument("--edge_weight", type=float, default=1, help="Weight for edge loss") # 1 in original EAMRI paper
 
     # data
