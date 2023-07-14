@@ -176,6 +176,10 @@ def train(args):
     else:
         scheduler = None
 
+    if args.resume_from is not None :
+        resume_from(model, optimizer, args.resume_from, device=device)
+
+
     # get loss function
     if args.loss == "ssim":
         loss_type = SSIMLoss().to(device=device)
@@ -273,3 +277,15 @@ def load_model(args, model: torch.nn.Module):
         if layer.split('.', 2)[1].isdigit() and (args.cascade <= int(layer.split('.', 2)[1]) <= 11):
             del pretrained[layer]
     model.load_state_dict(pretrained)
+
+def resume_from(model, optimizer, ckpt_path, device : torch.device = torch.device('cuda:0')):
+
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    print("resume from ", ckpt_path)
+    print("resume from epoch ", checkpoint['epoch'])
+    print("resume from best_val_loss ", checkpoint['best_val_loss'])
+
+
+    return model, optimizer
