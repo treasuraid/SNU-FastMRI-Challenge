@@ -14,13 +14,14 @@ if __name__ == '__main__':
     args.add_argument('--data_path', type=str, default='root/Data/leaderboard/', help='Directory of test data')
     parser.add_argument('-m', '--mask', type=str, default='acc4', choices=['acc4', 'acc8'], help='type of mask | acc4 or acc8')
 
+
+
     args = args.parse_args()
 
     forward_loader = create_data_loaders(data_path=args.data_path, args = args, isforward = True)
 
     for i, data in enumerate(forward_loader):
         for (mask, kspace, image, _, fnames, slices) in forward_loader:
-
             # visualize mask and image in 1 frame
             # kspace
             mask = mask.numpy()

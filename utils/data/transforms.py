@@ -29,6 +29,12 @@ class DataTransform:
             maximum = -1
 
         # todo add augmentation code for input kspace or image
+        if self.aug :
+            # mix mask with cartesian mask (1, 1, W, 1) -> (1, 1, W, 1)
+            mask = np.array(mask)
+
+
+
         masked_kspace = to_tensor(input * mask)
         masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
         mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()

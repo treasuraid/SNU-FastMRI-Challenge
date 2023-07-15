@@ -108,7 +108,4 @@ def collate_fn(batch):
     fname = [b[5] for b in batch]
     slice = [b[6] for b in batch]
 
-
-
-    return masks, inputs, targets, attrs, fnames, slices, integer_batch_mask
-
+    pass
