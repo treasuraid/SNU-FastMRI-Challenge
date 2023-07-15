@@ -54,7 +54,7 @@ def parse():
     # gradient
     parser.add_argument('--grad_accumulation', type=int, default=4, help='Gradient accumulation')
     parser.add_argument('--grad_norm', type=float, default=1e8, help='Gradient clipping')
-    parser.add_argument('--amp', type= bool, help='Use automatic mixed precision training')
+    parser.add_argument('--amp', type= bool, default = False, help='Use automatic mixed precision training')
 
     parser.add_argument('--unet', type= str, default = "plain", choices = ["plain", "swin"])
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
@@ -74,7 +74,7 @@ def parse():
     parser.add_argument("--edge", default=False, action = "store_true", help="Use edge image for training and validation")
     parser.add_argument("--collate", default=False, action = "store_true", help="Use collate function for training and validation")
 
-    parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint") # todo
+    parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint")
     args = parser.parse_args()
     # todo : argument to config file (yaml) for better readability
     return args
@@ -88,7 +88,8 @@ if __name__ == '__main__':
     if args.seed is not None:
         seed_fix(args.seed)
     
-
+    args.amp = False 
+    
     args.exp_dir = '../result' / args.net_name / 'checkpoints'
     args.val_dir = '../result' / args.net_name / 'reconstructions_val'
     args.main_dir = '../result' / args.net_name / __file__

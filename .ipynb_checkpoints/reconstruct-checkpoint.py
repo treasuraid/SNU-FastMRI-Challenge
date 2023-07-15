@@ -21,14 +21,27 @@ def parse():
     parser.add_argument('--sens_chans', type=int, default=8, help='Number of channels for sensitivity map U-Net')
     parser.add_argument("--input_key", type=str, default='kspace', help='Name of input key')
 
+    parser.add_argument("--edge", type=bool, default = False)
+    parser.add_argument("--aug", type=bool, default= False)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--collate", type=bool, default=False)
+    parser.add_argument("--mode", type=str, choices= ["leaderboard", "train", "val"], required=True)
+    parser.add_argument("--ckpt_name", type=str, default= "best_model.pt")
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = parse()
-    args.data_path = args.data_path / args.mask
+    
     args.exp_dir = '../result' / args.net_name / 'checkpoints'
-    args.forward_dir = '../result' / args.net_name / 'reconstructions_leaderboard' / args.mask
-    print(args.forward_dir)
+    
+    if args.mode == "leaderboard":
+        args.forward_dir = '../result' / args.net_name / 'reconstructions_leaderboard' / args.mask
+        args.data_path = args.data_path / args.mask
+    else: 
+        args.forward_dir = "../result" / args.net_name / "reconstructions_train"
+    
+    print(args.forward_dir, args.data_path)
+    
     forward(args)
