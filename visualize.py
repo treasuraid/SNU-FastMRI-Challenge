@@ -21,7 +21,7 @@ if __name__ == '__main__':
     forward_loader = create_data_loaders(data_path=args.data_path, args = args, isforward = True)
 
     for i, data in enumerate(forward_loader):
-        for (mask, kspace, image, _, fnames, slices) in forward_loader:
+        for (mask, kspace, image, _, _, fnames, slices) in forward_loader:
             # visualize mask and image in 1 frame
             # kspace
             mask = mask.numpy()
