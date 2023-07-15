@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 import torch
 import cv2
@@ -31,9 +33,7 @@ class DataTransform:
         # todo add augmentation code for input kspace or image
         if self.aug :
             # mix mask with cartesian mask (1, 1, W, 1) -> (1, 1, W, 1)
-            mask = np.array(mask)
-
-
+            mask = np.roll(mask, random.randint(-2, 2), axis=-2)
 
         masked_kspace = to_tensor(input * mask)
         masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)

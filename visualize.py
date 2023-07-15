@@ -29,6 +29,7 @@ if __name__ == '__main__':
             mask = mask.flatten()
             mask = np.vstack([mask] * kspace.shape[-3])
 
+            print(np.sum(mask))
+
             # visualize mask
-            plt.plot(mask)
-            plt.show()
+

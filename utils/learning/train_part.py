@@ -31,7 +31,6 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
-    scaler = GradScaler()
     total_loss = 0.
 
     for iter, data in enumerate(tqdm(data_loader)):
@@ -40,34 +39,20 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         kspace = kspace.to(device)
         target = target.to(device)
         maximum = maximum.to(device)
-
-        optimizer.zero_grad()
-        if args.amp:
-            with autocast(dtype = torch.float32):
-                output = model(kspace, mask)
-                if args.loss_mask :
-                    output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
-                loss = loss_type(output, target, maximum) / args.grad_accumulation
-            scaler.scale(loss).backward()
-
-        else:
-            output = model(kspace, mask)
-            if args.loss_mask:
-                output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
-            loss = loss_type(output, target, maximum) / args.grad_accumulation
-            loss.backward()
+        output = model(kspace, mask)
+        if args.loss_mask:
+            output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
+        loss = loss_type(output, target, maximum) / args.grad_accumulation
+        loss.backward()
 
         if ((iter + 1) % args.grad_accumulation) == 0:
             if args.grad_norm > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
-            if args.amp:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
+            optimizer.step()
 
             if args.scheduler is not None:
                 scheduler.step()
+            optimizer.zero_grad()
 
         total_loss += loss.item()
 
