@@ -70,7 +70,7 @@ class SliceData(Dataset):
         return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
 
 
-def create_data_loaders(data_path, args, shuffle=False, isforward=False):
+def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= False):
     if isforward == False:
         max_key_ = args.max_key
         target_key_ = args.target_key
@@ -79,7 +79,7 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False):
         target_key_ = -1
     data_storage = SliceData(
         root=data_path,
-        transform=DataTransform(isforward, max_key_, args.edge, args.aug),
+        transform=DataTransform(isforward, max_key_, args.edge, aug),
         input_key=args.input_key,
         target_key=target_key_,
         forward = isforward,

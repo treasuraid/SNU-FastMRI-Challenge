@@ -179,8 +179,8 @@ def train(args):
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
 
-    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False)
+    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
+    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
 
     # test saving and validation
 #     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
