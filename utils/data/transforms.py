@@ -36,13 +36,14 @@ class DataTransform:
             mask = np.roll(mask, random.randint(-2, 2), axis=-2)
 
         masked_kspace = to_tensor(input * mask)
+        origin_kspace = to_tensor(input)
         masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
         mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
 
         if self.edge:
-            return mask, masked_kspace, target, getSobel(target), maximum, fname, slice,
+            return mask, masked_kspace, origin_kspace, target, getSobel(target), maximum, fname, slice,
         else :
-            return mask, masked_kspace, target, -1, maximum, fname, slice,
+            return mask, masked_kspace, origin_kspace, target, -1, maximum, fname, slice,
 
 
 def getSobel(target):
@@ -79,7 +80,7 @@ class NoMaskTransform(DataTransform) :
         mask = torch.from_numpy(np.ones((1, 1, masked_kspace.shape[-2], 1)).astype(np.float32)).byte()
 
 
-        return mask, masked_kspace, target, -1, maximum, fname, slice,
+        return mask, masked_kspace,  target, -1, maximum, fname, slice,
 
 
 
