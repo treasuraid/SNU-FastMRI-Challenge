@@ -14,9 +14,11 @@ if os.getcwd() + '/utils/common/' not in sys.path:
     sys.path.insert(1, os.getcwd() + '/utils/common/')
 from utils.common.utils import seed_fix
 
+import logging
 from logging import getLogger
 logger = getLogger(__name__)
 
+import wandb ## for logging
 
 
 def parse():
@@ -80,9 +82,14 @@ def parse():
     return args
 
 if __name__ == '__main__':
-    args = parse()
 
-    # log actual batch size
+    args = parse()
+    logger.setLevel(logging.DEBUG)
+    logginghandler = logging.StreamHandler(sys.stdout)
+    logginghandler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(logginghandler)
+    logger.warning(args)
+
 
     # fix seed
     if args.seed is not None:
@@ -97,5 +104,7 @@ if __name__ == '__main__':
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     args.val_dir.mkdir(parents=True, exist_ok=True)
+
+    wandb.init(project="fast-mri", config=vars(args))
 
     train(args)

@@ -26,7 +26,7 @@ logger.setLevel(logging.INFO)
 
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, device=torch.device('cuda:0')):
-    logger.info(f"Running Training Epoch {epoch}")
+    logger.warning(f"Running Training Epoch {epoch}")
 
     model.train()
     start_epoch = start_iter = time.perf_counter()
@@ -142,11 +142,11 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
 def train(args):
     device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
     torch.cuda.set_device(device)
-    logger.info("Current cuda device: %d", torch.cuda.current_device())
+    logger.warning("Current cuda device: %d", device)
 
     # Choose Model
     if args.model == 'varnet':
-        logger.info("model: varnet")
+        logger.warning("model: varnet")
         model = VarNet(num_cascades=args.cascade,
                        chans=args.chans,
                        sens_chans=args.sens_chans,
@@ -154,7 +154,7 @@ def train(args):
                        config=args.config)
 
     elif args.model == 'eamri':
-        logger.info("model: eamri")
+        logger.warning("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1, 3, 3, 3, 3],
                       fNums=[48, 96, 96, 96, 96], n_MSRB=3, shift=True)
     else:

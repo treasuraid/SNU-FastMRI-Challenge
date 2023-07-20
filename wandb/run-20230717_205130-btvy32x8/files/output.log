@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "train.py", line 106, in <module>
+    train(args)
+  File "/Users/a./fast_mri/utils/learning/train_part.py", line 182, in train
+    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
+  File "/Users/a./fast_mri/utils/data/load_data.py", line 80, in create_data_loaders
+    data_storage = SliceData(
+  File "/Users/a./fast_mri/utils/data/load_data.py", line 18, in __init__
+    image_files = list(Path(root / "image").iterdir())
+  File "/opt/homebrew/anaconda3/envs/fastmri/lib/python3.8/pathlib.py", line 1122, in iterdir
+    for name in self._accessor.listdir(self):
+FileNotFoundError: [Errno 2] No such file or directory: '/root/Data/train/image'
+Namespace(GPU_NUM=0, amp=False, aug=False, batch_size=1, cascade=12, chans=18, collate=False, config='./utils/model/config/swin_36.yaml', data_path_train=PosixPath('/root/Data/train'), data_path_val=PosixPath('/root/Data/val'), edge=False, edge_weight=1, gamma=0.5, grad_accumulation=4, grad_norm=100000000.0, input_key='kspace', loss='ssim', loss_mask=False, lr=0.0003, max_key='max', model='varnet', net_name=PosixPath('test'), num_epochs=30, num_workers=4, report_interval=100, resume_from=None, scheduler=None, seed=2023, sens_chans=8, step_size=5, target_key='image_label', unet='plain')
+Number of parameters: 29936966

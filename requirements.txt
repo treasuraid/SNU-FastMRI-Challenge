@@ -5,3 +5,5 @@ timm
 scipy
 einops
 OmegaConf
+wandb
+pygrappa

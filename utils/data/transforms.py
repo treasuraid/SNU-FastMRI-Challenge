@@ -56,6 +56,34 @@ def getSobel(target):
     grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
     return grad
 
+
+class NoMaskTransform(DataTransform) :
+
+    def __init__(self, isforward, max_key, edge=False, aug=False):
+        super().__init__(isforward, max_key, edge, aug)
+
+    def __call__(self, mask, input, target, attrs, fname, slice):
+        if not self.isforward:
+            target = to_tensor(target) # full image of 384 x 384
+            maximum = attrs[self.max_key]
+        else:
+            target = -1
+            maximum = -1
+
+        if self.aug :
+            # mix mask with cartesian mask (1, 1, W, 1) -> (1, 1, W, 1)
+            mask = np.roll(mask, random.randint(-2, 2), axis=-2)
+
+        masked_kspace = to_tensor(input)
+        masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
+        mask = torch.from_numpy(np.ones((1, 1, masked_kspace.shape[-2], 1)).astype(np.float32)).byte()
+
+
+        return mask, masked_kspace, target, -1, maximum, fname, slice,
+
+
+
+
 def RandomMaskFunc() :
 
     pass

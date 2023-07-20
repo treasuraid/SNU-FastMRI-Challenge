@@ -7,7 +7,7 @@ import argparse
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--val_loss_log_path', type=str, default='./val_loss_log.npy')
+    parser.add_argument('--val_loss_log_path', type=str, default='./utils/common/val_loss_log.npy')
     parser.add_argument("--num_val", type=int, default=50)
     parser.add_argument("--save_fig", action="store_true", default=False)
     args = parser.parse_args()

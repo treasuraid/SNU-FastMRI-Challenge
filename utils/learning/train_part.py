@@ -15,18 +15,21 @@ from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss, EdgeMAELoss
-from utils.model.varnet import VarNet
+from utils.model.varnet import VarNet, VarnetAdded
 from utils.model.EAMRI import EAMRI
 import os
+import torch.nn.functional as F
+
 
 from logging import getLogger
 
+import wandb ## for logging
 logger = getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type, device=torch.device('cuda:0')):
-    logger.info(f"Running Training Epoch {epoch}")
+    logger.warning(f"Running Training Epoch {epoch}")
 
     model.train()
     start_epoch = start_iter = time.perf_counter()
@@ -34,15 +37,17 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     total_loss = 0.
 
     for iter, data in enumerate(tqdm(data_loader)):
-        mask, kspace, target, edge, maximum, _, _, = data
+        mask, kspace, kspace_origin, target, edge, maximum, _, _, = data
         mask = mask.to(device)
         kspace = kspace.to(device)
         target = target.to(device)
         maximum = maximum.to(device)
-        output = model(kspace, mask)
+        kspace_origin = kspace_origin.to(device)
+        output_kspace, output_image = model(kspace, mask)
         if args.loss_mask:
-            output, target = output*(target>1e-5).float(), target*(target>1e-5).float()
-        loss = loss_type(output, target, maximum) / args.grad_accumulation
+            output, target = output_image*(target>1e-5).float(), target*(target>1e-5).float()
+        loss = loss_type(output_image, target, maximum) + F.l1_loss(output_kspace, kspace_origin)
+        loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
         loss.backward()
 
         if ((iter + 1) % args.grad_accumulation) == 0:
@@ -54,7 +59,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
                 scheduler.step()
             optimizer.zero_grad()
 
-        total_loss += loss.item()
+        total_loss += loss.item() * args.grad_accumulation
+        wandb.log({"train_batch_loss" : loss.item() * args.grad_accumulation,
+                   "learning_rate" : optimizer.param_groups[0]['lr']})
 
         if (iter % args.report_interval) == 0:
             logger.info(
@@ -83,12 +90,12 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
-            mask, kspace, target, edge, _, fnames, slices = data
+            mask, kspace, _, target, edge, _, fnames, slices = data
             mask = mask.to(device)
             kspace = kspace.to(device)
             target = target.to(device)
 
-            output = model(kspace, mask)
+            _, output = model(kspace, mask)
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -126,12 +133,12 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_val_loss, is_new_bes
 
 def train(args):
     device = torch.device(f'cuda:{args.GPU_NUM}' if torch.cuda.is_available() else 'cpu')
-    torch.cuda.set_device(device)
-    logger.info("Current cuda device: %d", torch.cuda.current_device())
+    # torch.cuda.set_device(device)
+    # logger.info("Current cuda device: %d", torch.cuda.current_device())
 
     # Choose Model
     if args.model == 'varnet':
-        logger.info("model: varnet")
+        logger.warning("model: varnet")
         model = VarNet(num_cascades=args.cascade,
                        chans=args.chans,
                        sens_chans=args.sens_chans,
@@ -139,9 +146,13 @@ def train(args):
                        config=args.config)
 
     elif args.model == 'eamri':
-        logger.info("model: eamri")
+        logger.warning("model: eamri")
         model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1, 3, 3, 3, 3],
                       fNums=[48, 96, 96, 96, 96], n_MSRB=3, shift=True)
+
+    elif args.model == "varnet_add":
+        logger.warning("model: varnet_add")
+        model = VarnetAdded(num_cascades=args.cascade)
     else:
         raise NotImplementedError("model not found")
 
@@ -188,8 +199,8 @@ def train(args):
 
     for epoch in range(start_epoch, args.num_epochs):
 
-        logger.info(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
-        logger.info(f"Actual Batch size: {args.batch_size} * {args.grad_accumulation} = "
+        logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
+        logger.warning(f"Actual Batch size: {args.batch_size} * {args.grad_accumulation} = "
                     f"{args.batch_size * args.grad_accumulation}")
 
         # train
@@ -198,8 +209,13 @@ def train(args):
         # validate
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
 
+        # logging at wandb
+        wandb.log({"train_loss": train_loss, "val_loss": val_loss, "epoch": epoch})
+
         # save loss
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
+        logger.warning(f"val loss graph : {val_loss_log}")
+
         file_path = os.path.join(args.val_loss_dir, "val_loss_log")
         np.save(file_path, val_loss_log)
         logger.info(f"loss file saved! {file_path}")
@@ -214,21 +230,17 @@ def train(args):
 
         # save model
         save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
-        logger.info(
-            f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
-            f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
-        )
-        print(
+        logger.warning(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
 
         # save reconstructions if new best
         if is_new_best:
-            logger.info("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+            logger.warning("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
             start = time.perf_counter()
             save_reconstructions(reconstructions, args.val_dir, targets=targets, inputs=inputs)
-            logger.info(f'ForwardTime = {time.perf_counter() - start:.4f}s')
+            logger.warning(f'ForwardTime = {time.perf_counter() - start:.4f}s')
 
 
 def load_model(args, model: torch.nn.Module):
@@ -268,9 +280,9 @@ def resume_from(model, optimizer, ckpt_path, device : torch.device = torch.devic
     checkpoint = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(checkpoint['model'])
     optimizer.load_state_dict(checkpoint['optimizer'])
-    print("resume from ", ckpt_path)
-    print("resume from epoch ", checkpoint['epoch'])
-    print("resume from best_val_loss ", checkpoint['best_val_loss'])
+    logger.debug("resume from ", ckpt_path)
+    logger.debug("resume from epoch ", checkpoint['epoch'])
+    logger.debug("resume from best_val_loss ", checkpoint['best_val_loss'])
 
 
     return model, optimizer

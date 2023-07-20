@@ -278,8 +278,15 @@ class VarNet(nn.Module):
         
         return result[..., (height - 384) // 2: 384 + (height - 384) // 2, (width - 384) // 2: 384 + (width - 384) // 2]
     
-    
+    def get_kspace(self, masked_kspace:torch.Tensor, mask:torch.Tensor):
 
+        sens_maps = self.sens_net(masked_kspace, mask)
+        kspace_pred = masked_kspace.clone()
+
+        for cascade in self.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
+
+        return kspace_pred
 class VarNetBlock(nn.Module):
     """
     Model block for end-to-end variational network.
@@ -324,6 +331,48 @@ class VarNetBlock(nn.Module):
         model_term = self.sens_expand(model_term, sens_maps)
 
         return current_kspace - soft_dc - model_term
+
+
+class VarnetAdded(nn.Module) :
+
+    def __init__(self, num_cascades=12, ckpt = "../results/varnet_12_aug/checkpoints/best_model.pt"):
+        super.__init__(VarnetAdded, self)
+        self.varnet = VarNet(num_cascades=12, sens_chans=8, sens_pools=4, chans=18, pools=4, unet="plain")
+        self.varnet.load_state_dict(torch.load(ckpt)["model"])
+        self.sens_net = self.varnet.sens_net
+        self.cascades = nn.ModuleList(
+            [VarNetBlock(NormUnet(30, 4)) for _ in range(num_cascades)]
+        )
+
+        # freeze the pretrained varnet
+        for param in self.varnet.parameters():
+            param.requires_grad = False
+
+        for param in self.sens_net.parameters():
+            param.requires_grad = True
+
+    def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+
+        pretrained_kspace = self.varnet.get_kspace(masked_kspace, mask)
+        sens_maps = self.sens_net(masked_kspace, mask)
+        kspace_pred = masked_kspace.clone()
+
+        for cascade in self.varnet.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
+
+        no_mask = torch.ones_like(mask)
+        for cascade in self.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, no_mask, sens_maps)
+
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1)  # complex_abs: magnitude, ifft2c: inverse fourier transform
+        height = result.shape[-2]
+        width = result.shape[-1]
+
+        return result[..., (height - 384) // 2: 384 + (height - 384) // 2, (width - 384) // 2: 384 + (width - 384) // 2]
+
+
+
+
 
 
 if __name__ == "__main__" :
