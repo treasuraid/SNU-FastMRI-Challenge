@@ -190,8 +190,9 @@ def train(args):
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
 
-    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
+
+    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
+    val_dataset, val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
 
     # test saving and validation
 #     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
@@ -242,6 +243,8 @@ def train(args):
             save_reconstructions(reconstructions, args.val_dir, targets=targets, inputs=inputs)
             logger.warning(f'ForwardTime = {time.perf_counter() - start:.4f}s')
 
+        if args.aug :
+            train_dataset.transform.augmentor.current_epoch += 1
 
 def load_model(args, model: torch.nn.Module):
     VARNET_FOLDER = "https://dl.fbaipublicfiles.com/fastMRI/trained_models/varnet/"

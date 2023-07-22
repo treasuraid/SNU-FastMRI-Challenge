@@ -5,7 +5,6 @@ import argparse
 import shutil
 import os, sys
 from pathlib import Path
-
 if os.getcwd() + '/utils/model/' not in sys.path:
     sys.path.insert(1, os.getcwd() + '/utils/model/')
 from utils.learning.train_part import train
@@ -13,7 +12,7 @@ from utils.learning.train_part import train
 if os.getcwd() + '/utils/common/' not in sys.path:
     sys.path.insert(1, os.getcwd() + '/utils/common/')
 from utils.common.utils import seed_fix
-
+from utils.data.transforms import DataAugmentor
 import logging
 from logging import getLogger
 logger = getLogger(__name__)
@@ -77,6 +76,16 @@ def parse():
     parser.add_argument("--collate", default=False, action = "store_true", help="Use collate function for training and validation")
 
     parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint")
+
+    # augmentation aug delay max epochs aug strength
+    # parser.add_argument("--aug_delay", type=int, default=0, help="Augmentation delay")
+    # parser.add_argument("--max_epochs", type=int, default=30, help="Max epochs for augmentation")
+    # parser.add_argument("--aug_strength", type=float, default=0.5, help="Augmentation strength")
+    # parser.add_argument("--aug_schedule", type=str, default="ramp", choices = ["constant", "ramp", "exponent"], help="Augmentation schedule")
+
+    DataAugmentor.add_augmentation_specific_args(parser)
+
+
     args = parser.parse_args()
     # todo : argument to config file (yaml) for better readability
     return args

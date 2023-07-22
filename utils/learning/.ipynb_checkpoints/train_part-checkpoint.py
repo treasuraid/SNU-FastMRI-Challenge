@@ -179,7 +179,6 @@ def train(args):
     if args.resume_from is not None :
         resume_from(model, optimizer, args.resume_from, device=device)
 
-
     # get loss function
     if args.loss == "ssim":
         loss_type = SSIMLoss().to(device=device)

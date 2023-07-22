@@ -35,23 +35,27 @@ if __name__ == '__main__':
     for fname in debug_datas :
         with h5py.File(fname, "r") as hf:
 
-            kspace = np.array(hf["kspace"])[0]
+            kspace = np.array(hf["kspace"])[1]
             mask = np.array(hf["mask"])
             grappa_reconstruction = grappa_recon(kspace * mask, mask)
             print(grappa_reconstruction.shape)
             plt.imshow(np.sqrt(np.sum(np.abs(kspace * mask != 0)**2, axis=0)))
             plt.show()
 
-            plt.subplot(1, 4, 1)
+            plt.subplot(1, 5, 1)
             plt.imshow(np.sqrt(np.sum(np.abs(grappa_reconstruction)**2, axis=0)))
-            plt.subplot(1, 4, 2)
+            plt.subplot(1, 5, 2)
             plt.imshow(np.sqrt(np.sum(np.abs(iff2c(kspace * mask))**2, axis=0)))
 
-            plt.subplot(1, 4, 3)
+            plt.subplot(1, 5, 3)
             plt.imshow(np.sqrt(np.sum(np.abs(iff2c(kspace))**2, axis=0)))
-            plt.subplot(1, 4, 4)
+            plt.subplot(1, 5, 4)
             # plot diff
             plt.imshow(np.sqrt(np.sum(np.abs(iff2c(kspace))**2, axis=0) - np.sum(np.abs(grappa_reconstruction)**2, axis=0)))
+
+
+            plt.subplot(1, 5, 5)
+            plt.imshow(np.sqrt(np.sum(np.abs(iff2c(np.flip(kspace, axis=2))) ** 2, axis=0)))
             plt.show()
     #
     # binary_mask = np.zeros((1, 1, 256, 256, 1))
