@@ -1,4 +1,0 @@
-name: fastmri
-channels:
-  - defaults
-prefix: /Users/a./opt/anaconda3/envs/fastmri

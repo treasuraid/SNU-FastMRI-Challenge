@@ -38,15 +38,16 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
 
     for iter, data in enumerate(tqdm(data_loader)):
         mask, kspace, kspace_origin, target, edge, maximum, _, _, = data
+#         print(mask.shape, kspace.shape, target.shape, maximum, torch.sum(mask > 0))
         mask = mask.to(device)
         kspace = kspace.to(device)
         target = target.to(device)
         maximum = maximum.to(device)
         kspace_origin = kspace_origin.to(device)
-        output_kspace, output_image = model(kspace, mask)
+        output_image = model(kspace, mask)
         if args.loss_mask:
             output, target = output_image*(target>1e-5).float(), target*(target>1e-5).float()
-        loss = loss_type(output_image, target, maximum) + F.l1_loss(output_kspace, kspace_origin)
+        loss = loss_type(output_image, target, maximum)
         loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
         loss.backward()
 
@@ -95,7 +96,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
             kspace = kspace.to(device)
             target = target.to(device)
 
-            _, output = model(kspace, mask)
+            output = model(kspace, mask)
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -159,7 +160,7 @@ def train(args):
     print_model_num_parameters(model)
 
     model = model.to(device=device)
-    optimizer = torch.optim.Adam(model.parameters(), args.lr)
+    optimizer = torch.optim.RAdam(model.parameters(), args.lr)
 
     # get scheduler
     if args.scheduler is not None:
@@ -190,8 +191,9 @@ def train(args):
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
 
-    train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
-    val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
+
+    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
+    val_dataset, val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
 
     # test saving and validation
 #     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
@@ -209,16 +211,6 @@ def train(args):
         # validate
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
 
-        # logging at wandb
-        wandb.log({"train_loss": train_loss, "val_loss": val_loss, "epoch": epoch})
-
-        # save loss
-        val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
-        logger.warning(f"val loss graph : {val_loss_log}")
-
-        file_path = os.path.join(args.val_loss_dir, "val_loss_log")
-        np.save(file_path, val_loss_log)
-        logger.info(f"loss file saved! {file_path}")
 
         # cal loss to tensor
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
@@ -227,7 +219,18 @@ def train(args):
         val_loss = val_loss / num_subjects
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
+        
+        # logging at wandb
+        wandb.log({"train_loss": train_loss, "val_loss": val_loss, "epoch": epoch})
 
+        # save loss
+        val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss.item()]]), axis=0)
+        logger.warning(f"val loss graph : {val_loss_log}")
+
+        file_path = os.path.join(args.val_loss_dir, "val_loss_log")
+        np.save(file_path, val_loss_log)
+        logger.info(f"loss file saved! {file_path}")
+        
         # save model
         save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
         logger.warning(
@@ -242,6 +245,8 @@ def train(args):
             save_reconstructions(reconstructions, args.val_dir, targets=targets, inputs=inputs)
             logger.warning(f'ForwardTime = {time.perf_counter() - start:.4f}s')
 
+        if args.aug :
+            train_dataset.transform.augmentor.current_epoch += 1
 
 def load_model(args, model: torch.nn.Module):
     VARNET_FOLDER = "https://dl.fbaipublicfiles.com/fastMRI/trained_models/varnet/"
@@ -278,11 +283,12 @@ def load_model(args, model: torch.nn.Module):
 def resume_from(model, optimizer, ckpt_path, device : torch.device = torch.device('cuda:0')):
 
     checkpoint = torch.load(ckpt_path, map_location=device)
-    model.load_state_dict(checkpoint['model'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    logger.debug("resume from ", ckpt_path)
-    logger.debug("resume from epoch ", checkpoint['epoch'])
-    logger.debug("resume from best_val_loss ", checkpoint['best_val_loss'])
+    model.load_state_dict(checkpoint['model'], strict = False)
+#     optimizer.load_state_dict(checkpoint['optimizer'])
+    
+    logger.warning("resume from ", ckpt_path)
+    logger.warning("resume from epoch ", checkpoint['epoch'])
+    logger.warning("resume from best_val_loss ", checkpoint['best_val_loss'])
 
 
     return model, optimizer

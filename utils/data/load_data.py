@@ -1,6 +1,7 @@
 import h5py
 import random
-from utils.data.transforms import DataTransform
+from utils.data.transforms import DataTransform, VarNetDataTransform, DataAugmentor
+from utils.model.fastmri.data.subsample import create_mask_for_mask_type
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import numpy as np
@@ -70,30 +71,53 @@ class SliceData(Dataset):
         return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
 
 
-def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= False):
+def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= False, mode = 'train'):
     if isforward == False:
         max_key_ = args.max_key
         target_key_ = args.target_key
     else:
         max_key_ = -1
         target_key_ = -1
-    data_storage = SliceData(
-        root=data_path,
-        transform=DataTransform(isforward, max_key_, args.edge, aug),
-        input_key=args.input_key,
-        target_key=target_key_,
-        forward = isforward,
-        edge= args.edge
-    )
 
-    data_loader = DataLoader(
-        dataset=data_storage,
-        batch_size=args.batch_size,
-        shuffle=shuffle,
-        num_workers=args.num_workers,
-        collate_fn=collate_fn if args.collate else None,
-    )
-    return data_loader
+    if aug == False  :
+        data_storage = SliceData(
+            root=data_path,
+            transform=DataTransform(isforward, max_key_, args.edge, False),
+            input_key=args.input_key,
+            target_key=target_key_,
+            forward = isforward,
+            edge= args.edge
+        )
+
+        data_loader = DataLoader(
+            dataset=data_storage,
+            batch_size=args.batch_size,
+            shuffle=shuffle,
+            num_workers=args.num_workers,
+            collate_fn=collate_fn if args.collate else None,
+        )
+    else :
+        augmentor = DataAugmentor(args)
+        # #mask = create_mask_for_mask_type(
+        #     "equispaced", 0.08
+        # )
+        data_storage = SliceData(
+            root=data_path,
+            transform=VarNetDataTransform(augmentor, use_seed=False),
+            input_key=args.input_key,
+            target_key=target_key_,
+            forward=isforward,
+            edge=args.edge,
+        )
+        data_loader = DataLoader(
+            dataset=data_storage,
+            batch_size=args.batch_size,
+            shuffle=shuffle,
+            num_workers=args.num_workers,
+            collate_fn=collate_fn if args.collate else None,
+        )
+
+    return data_storage, data_loader
 
 
 def collate_fn(batch):
