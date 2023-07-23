@@ -15,6 +15,7 @@ from utils.model.fastmri import fft2c, ifft2c, rss_complex, complex_abs
 from typing import List, Optional, Union
 
 from utils.data.helper import *
+
 def to_tensor(data):
     """
     Convert numpy array to PyTorch tensor. For complex arrays, the real and imaginary parts
@@ -118,7 +119,6 @@ class VarNetDataTransform:
         # Apply augmentations if needed
         if self.use_augment:
             if self.augmentor.schedule_p() > -0.0001:
-
                 kspace, target = self.augmentor(kspace, target.shape)
 
 
@@ -126,6 +126,7 @@ class VarNetDataTransform:
         seed = None if not self.use_seed else tuple(map(ord, fname))
         # acq_start = attrs["padding_left"]
         # acq_end = attrs["padding_right"]
+
         
         
 
@@ -460,7 +461,6 @@ class DataAugmentor:
 
         # Augment if needed
         if self.aug_on and p > -0.0001:
-
             kspace, target = self.augmentation_pipeline.augment_from_kspace(kspace,
                                                                             target_size=target_size,
                                                                             max_train_size=self.max_train_resolution)
