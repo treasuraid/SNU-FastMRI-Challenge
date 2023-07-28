@@ -11,10 +11,11 @@ from tqdm import tqdm
 from pathlib import Path
 import copy
 
+
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import *
-from utils.common.loss_function import SSIMLoss, EdgeMAELoss
+from utils.common.loss_function import SSIMLoss, EdgeMAELoss, FocalFrequencyLoss
 from utils.model.varnet import VarNet, VarnetAdded
 from utils.model.EAMRI import EAMRI
 import os
@@ -33,11 +34,12 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
 
     model.train()
     start_epoch = start_iter = time.perf_counter()
+    ffl = FocalFrequencyLoss(loss_weight=1.0, alpha=1.0) 
     len_loader = len(data_loader)
     total_loss = 0.
 
     for iter, data in enumerate(tqdm(data_loader)):
-        mask, kspace, kspace_origin, target, edge, maximum, _, _, = data
+        mask, kspace, kspace_origin, target, edge, maximum, fname, _, = data
 #         print(mask.shape, kspace.shape, target.shape, maximum, torch.sum(mask > 0))
         mask = mask.to(device)
         kspace = kspace.to(device)
@@ -46,11 +48,15 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         kspace_origin = kspace_origin.to(device)
         output_image = model(kspace, mask)
         if args.loss_mask:
-            output, target = output_image*(target>1e-5).float(), target*(target>1e-5).float()
-        loss = loss_type(output_image, target, maximum)
+            output_image, target = output_image*(target>3e-5).float(), target*(target>3e-5).float()
+        loss_ssim  = loss_type(output_image, target, maximum) 
+        loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
+        loss = loss_fft + loss_ssim 
+        if loss.item() > 0.04 :
+            print(f"loss {loss.item()} in {fname}")
         loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
         loss.backward()
-
+        
         if ((iter + 1) % args.grad_accumulation) == 0:
             if args.grad_norm > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
@@ -62,7 +68,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
 
         total_loss += loss.item() * args.grad_accumulation
         wandb.log({"train_batch_loss" : loss.item() * args.grad_accumulation,
-                   "learning_rate" : optimizer.param_groups[0]['lr']})
+                   "learning_rate" : optimizer.param_groups[0]['lr'],
+                  "train_ssim_loss": loss_ssim.item()})
 
         if (iter % args.report_interval) == 0:
             logger.info(
@@ -97,7 +104,9 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
             target = target.to(device)
 
             output = model(kspace, mask)
-
+            if args.loss_mask:
+                output, target = output*(target>3e-5).float(), target*(target>3e-5).float()
+            
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
                 targets[fnames[i]][int(slices[i])] = target[i].cpu().numpy()
@@ -158,7 +167,7 @@ def train(args):
         raise NotImplementedError("model not found")
 
     print_model_num_parameters(model)
-
+    
     model = model.to(device=device)
     optimizer = torch.optim.RAdam(model.parameters(), args.lr)
 
@@ -195,10 +204,10 @@ def train(args):
     train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
     val_dataset, val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
 
-    # test saving and validation
-#     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
-
+#     # test saving and validation
+    save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
+    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+    print(val_loss.item())
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
@@ -284,7 +293,7 @@ def resume_from(model, optimizer, ckpt_path, device : torch.device = torch.devic
 
     checkpoint = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(checkpoint['model'], strict = False)
-#     optimizer.load_state_dict(checkpoint['optimizer'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
     
     logger.warning("resume from ", ckpt_path)
     logger.warning("resume from epoch ", checkpoint['epoch'])

@@ -53,9 +53,9 @@ class DataTransform:
         mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
 
         if self.edge:
-            return mask, masked_kspace, origin_kspace, target, getSobel(target), maximum, fname, slice,
+            return mask, masked_kspace, origin_kspace, target, getSobel(target), maximum, fname, slice
         else :
-            return mask, masked_kspace, origin_kspace, target, -1, maximum, fname, slice,
+            return mask, masked_kspace, origin_kspace, target, -1, maximum, fname, slice
 
 
 class VarNetDataTransform:

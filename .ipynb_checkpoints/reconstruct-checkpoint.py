@@ -33,7 +33,7 @@ def parse():
 
 if __name__ == '__main__':
     args = parse()
-    
+    args.edge = False
     args.exp_dir = '../result' / args.net_name / 'checkpoints'
     
     if args.mode == "leaderboard":

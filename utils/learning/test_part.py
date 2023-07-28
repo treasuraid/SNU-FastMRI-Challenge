@@ -9,9 +9,11 @@ from utils.model.varnet import VarNet
 def test(args, model, data_loader):
     model.eval()
     reconstructions = defaultdict(dict)
-    
     with torch.no_grad():
-        for (mask, kspace, _, _, _, fnames, slices) in data_loader:
+        for data in data_loader:
+     
+            mask, kspace, _, _, _, _, fnames, slices = data
+            
             kspace = kspace.cuda(non_blocking=True)
             mask = mask.cuda(non_blocking=True)
             output = model(kspace, mask)
@@ -41,6 +43,6 @@ def forward(args):
     print(checkpoint['epoch'], checkpoint['best_val_loss'].item())
     model.load_state_dict(checkpoint['model'])
     
-    forward_loader = create_data_loaders(data_path = args.data_path, args = args, isforward = True)
+    _, forward_loader = create_data_loaders(data_path = args.data_path, args = args, isforward = True)
     reconstructions, inputs = test(args, model, forward_loader)
     save_reconstructions(reconstructions, args.forward_dir, inputs=inputs)
