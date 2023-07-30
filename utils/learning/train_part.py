@@ -21,6 +21,7 @@ from utils.model.EAMRI import EAMRI
 import os
 import torch.nn.functional as F
 
+from kornia.morphology import dilation, erosion 
 
 from logging import getLogger
 
@@ -37,7 +38,10 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     ffl = FocalFrequencyLoss(loss_weight=1.0, alpha=1.0) 
     len_loader = len(data_loader)
     total_loss = 0.
-
+    
+    # for masking loss 
+    k = torch.ones(3,3).byte().to(device)
+    
     for iter, data in enumerate(tqdm(data_loader)):
         mask, kspace, kspace_origin, target, edge, maximum, fname, _, = data
 #         print(mask.shape, kspace.shape, target.shape, maximum, torch.sum(mask > 0))
@@ -48,12 +52,25 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         kspace_origin = kspace_origin.to(device)
         output_image = model(kspace, mask)
         if args.loss_mask:
-            output_image, target = output_image*(target>3e-5).float(), target*(target>3e-5).float()
+            loss_mask  = (target > 5e-5).byte()
+            # for 1 time 
+            loss_mask  = erosion(loss_mask, k)
+            # for 15 times dilation 
+            for i in range(15):
+                loss_mask = dilation(loss_mask, k)
+            for i in range(14):
+                loss_mask = erosion(loss_mask, k)
+            
+            # erosion by 1 time, dilate for 15 times and erosion by 1 
+            
+            output_image = output_image * loss_mask.float()
+            target = target * loss_mask.float() 
+
         loss_ssim  = loss_type(output_image, target, maximum) 
         loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
         loss = loss_fft + loss_ssim 
-        if loss.item() > 0.04 :
-            print(f"loss {loss.item()} in {fname}")
+        # if loss.item() > 0.04 :
+        #     print(f"loss {loss.item()} in {fname}")
         loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
         loss.backward()
         
@@ -95,6 +112,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
     reconstructions = defaultdict(dict)
     targets = defaultdict(dict)
     start = time.perf_counter()
+    k = torch.ones(3,3).byte().to(device)
 
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
@@ -105,7 +123,15 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
             output = model(kspace, mask)
             if args.loss_mask:
-                output, target = output*(target>3e-5).float(), target*(target>3e-5).float()
+                loss_mask  = (target > 5e-5).byte()
+            # for 1 time 
+                loss_mask  = erosion(loss_mask, k)
+                for i in range(15):
+                    loss_mask = dilation(loss_mask, k)
+                for i in range(14):
+                    loss_mask = erosion(loss_mask, k)
+                output_image = output_image * loss_mask.float()
+                target = target * loss_mask.float() 
             
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()

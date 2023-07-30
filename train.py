@@ -30,8 +30,8 @@ def parse():
     parser.add_argument('-l', '--lr', type=float, default=0.00005, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=100, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
-    parser.add_argument('-t', '--data-path-train', type=Path, default='/root/Data/train/', help='Directory of train data')
-    parser.add_argument('-v', '--data-path-val', type=Path, default='/root/Data/val/', help='Directory of validation data')
+    parser.add_argument('-t', '--data-path-train', type=Path, default='../../Data/train/', help='Directory of train data')
+    parser.add_argument('-v', '--data-path-val', type=Path, default='../../Data/val/', help='Directory of validation data')
     
     parser.add_argument('--cascade', type=int, default=12, help='Number of cascades | Should be less than 12') ## important hyperparameter
     parser.add_argument('--chans', type=int, default=18, help='Number of channels for cascade U-Net | 18 in original varnet') ## important hyperparameter
