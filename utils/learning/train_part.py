@@ -40,7 +40,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     total_loss = 0.
     
     # for masking loss 
-    k = torch.ones(3,3).byte().to(device)
+    k = torch.ones(3,3).float().to(device)
     
     for iter, data in enumerate(tqdm(data_loader)):
         mask, kspace, kspace_origin, target, edge, maximum, fname, _, = data
@@ -52,7 +52,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         kspace_origin = kspace_origin.to(device)
         output_image = model(kspace, mask)
         if args.loss_mask:
-            loss_mask  = (target > 5e-5).byte()
+            loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
             loss_mask  = erosion(loss_mask, k)
             # for 15 times dilation 
@@ -62,9 +62,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
                 loss_mask = erosion(loss_mask, k)
             
             # erosion by 1 time, dilate for 15 times and erosion by 1 
-            
-            output_image = output_image * loss_mask.float()
-            target = target * loss_mask.float() 
+            loss_mask = loss_mask.float().squeeze(0)
+            output_image = output_image * loss_mask
+            target = target * loss_mask
 
         loss_ssim  = loss_type(output_image, target, maximum) 
         loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
@@ -112,7 +112,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
     reconstructions = defaultdict(dict)
     targets = defaultdict(dict)
     start = time.perf_counter()
-    k = torch.ones(3,3).byte().to(device)
+    k = torch.ones(3,3).float().to(device)
 
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
@@ -123,15 +123,16 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
             output = model(kspace, mask)
             if args.loss_mask:
-                loss_mask  = (target > 5e-5).byte()
+                loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
                     loss_mask = dilation(loss_mask, k)
                 for i in range(14):
                     loss_mask = erosion(loss_mask, k)
-                output_image = output_image * loss_mask.float()
-                target = target * loss_mask.float() 
+                loss_mask = loss_mask.squeeze(0)
+                output= output * loss_mask
+                target = target * loss_mask 
             
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -233,7 +234,7 @@ def train(args):
 #     # test saving and validation
     save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
-    print(val_loss.item())
+    print(val_loss.item()/num_subjects)
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')

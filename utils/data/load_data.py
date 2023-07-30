@@ -133,3 +133,69 @@ def collate_fn(batch):
     slice = [b[6] for b in batch]
 
     pass
+
+
+class ReconData(Dataset) : 
+    
+    def __init__(self, root, root_recon, transform, input_key, target_key, forward=False, edge=False):
+        self.transform = transform
+        self.input_key = input_key
+        self.target_key = target_key
+        self.forward = forward
+        self.image_examples = []
+        self.kspace_examples = []
+        self.edge = edge
+        if not forward:
+            image_files = list(Path(root / "image").iterdir())
+            for fname in sorted(image_files):
+                num_slices = self._get_metadata(fname)
+                self.image_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+
+        kspace_files = list(Path(root / "kspace").iterdir())
+        for fname in sorted(kspace_files):
+            num_slices = self._get_metadata(fname)
+            self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+
+    def _get_metadata(self, fname):
+        with h5py.File(fname, "r") as hf:
+            if self.input_key in hf.keys():
+                num_slices = hf[self.input_key].shape[0]
+            elif self.target_key in hf.keys():
+                num_slices = hf[self.target_key].shape[0]
+        return num_slices
+    
+    def __len__(self):
+        return len(self.kspace_examples)
+
+    def __getitem__(self, i):
+        """
+        Args:
+            i (int): Index
+        Returns:
+            mask: [B, 1, 1, W, 1]
+            masked_kspace: [B, Num_Coils, H, W, 2]
+            target: [B, 1, 384, 384] # full image of 384 x 384 or tuple([B, 1, 384, 384], [B, 1, 384, 384]) # full image of 384 x 384 and edge image of 384 x 384
+            maximum: [B, 1]
+            fname: [B, 1]
+            slice: [B, 1]
+        """
+        if not self.forward:
+            image_fname, _ = self.image_examples[i]
+        kspace_fname, dataslice = self.kspace_examples[i]
+
+        with h5py.File(kspace_fname, "r") as hf:
+            input = hf[self.input_key][dataslice]
+            mask = np.array(hf["mask"])
+
+        if not self.forward:
+            with h5py.File(image_fname, "r") as hf:
+                target = hf[self.target_key][dataslice]
+                attrs = dict(hf.attrs)
+        else:
+            target = -1
+            attrs = -1
+
+
+
+        return self.transform(mask, input, target, attrs, kspace_fname.name, dataslice)
+
