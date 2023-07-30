@@ -8,11 +8,13 @@ def iff2c(kspace) :
     return np.roll(np.roll(np.fft.ifft2(kspace), shift=h // 2, axis=1),
                    shift=w // 2, axis=2)
 
+
+
 def grappa_recon(kspace: np.ndarray, mask: np.ndarray):
     """
     Args:
         kspace: (C, H, W)
-        mask: (1, 1, H, W, 1)
+        mask: (W)
     """
     h, w = kspace.shape[-2:]
     squeezed_mask = mask.squeeze()
@@ -23,43 +25,53 @@ def grappa_recon(kspace: np.ndarray, mask: np.ndarray):
     num_low_freqs = min(left, right)
     calib = kspace[:, :, cent - num_low_freqs:cent + num_low_freqs].copy()
     grappa_result = grappa(kspace, calib, kernel_size=(5, 5), coil_axis=0)
-    return iff2c(grappa_result)
+    grappa_result = iff2c(grappa_result)
 
+    # crop to [384, 384]
+    grappa_result = np.sqrt(np.sum(np.abs(grappa_result)**2, axis=0))
+    return grappa_result[..., h//2-192:h//2+192, w//2-192:w//2+192]
+    
 
 if __name__ == '__main__':
 
     import h5py
-    import matplotlib.pyplot as plt
-    debug_datas = ["/Users/a./fast_mri/data_debug/brain_acc4_101.h5", "/Users/a./fast_mri/data_debug/brain_acc8_101.h5"]
-
-    for fname in debug_datas :
-        with h5py.File(fname, "r") as hf:
-
-            kspace = np.array(hf["kspace"])[1]
-            mask = np.array(hf["mask"])
-            grappa_reconstruction = grappa_recon(kspace * mask, mask)
-            print(grappa_reconstruction.shape)
-            plt.imshow(np.sqrt(np.sum(np.abs(kspace * mask != 0)**2, axis=0)))
-            plt.show()
-
-            plt.subplot(1, 5, 1)
-            plt.imshow(np.sqrt(np.sum(np.abs(grappa_reconstruction)**2, axis=0)))
-            plt.subplot(1, 5, 2)
-            plt.imshow(np.sqrt(np.sum(np.abs(iff2c(kspace * mask))**2, axis=0)))
-
-            plt.subplot(1, 5, 3)
-            plt.imshow(np.sqrt(np.sum(np.abs(iff2c(kspace))**2, axis=0)))
-            plt.subplot(1, 5, 4)
-            # plot diff
-            plt.imshow(np.sqrt(np.sum(np.abs(iff2c(kspace))**2, axis=0) - np.sum(np.abs(grappa_reconstruction)**2, axis=0)))
-
-
-            plt.subplot(1, 5, 5)
-            plt.imshow(np.sqrt(np.sum(np.abs(iff2c(np.flip(kspace, axis=2))) ** 2, axis=0)))
-            plt.show()
-    #
-    # binary_mask = np.zeros((1, 1, 256, 256, 1))
-    # binary_mask[..., 128-30:128+40, :] = 1
-    #
-    # grappa_reconstructed = grappa_recon(kspace, binary_mask)
-    # print(grappa_reconstructed.shape)
+    import argparse
+    import os 
+    from tqdm import tqdm
+    import matplotlib.pyplot as plt 
+    # 3 times 반복
+    data_dir = "../../Data/leaderboard/acc4/kspace" 
+    grappa_dir = "../../Data/grappa/leaderboard/acc4" 
+    
+    
+    for fname in tqdm(os.listdir(data_dir)) :
+        
+        # open h5 file
+        
+        with h5py.File(os.path.join(data_dir, fname), 'r') as f :
+            image_masked = np.array(f["kspace"])
+            num_slice = image_masked.shape[0]
+            mask = np.array(f["mask"])
+            # stack mask with kspace.shape[-2] 
+            
+            
+            grappa_recon_images = []
+            for slice in tqdm(range(num_slice)) :
+                kspace_slice = image_masked[slice]
+                grappa_recon_image = grappa_recon(kspace_slice*mask, mask)
+                
+                grappa_recon_images.append(grappa_recon_image)
+                
+            grappa_recon_images = np.array(grappa_recon_images)
+            
+            # save grappa_recon_images
+            
+            with h5py.File(os.path.join(grappa_dir, fname), 'w') as f :
+                f.create_dataset("image_grappa", data = grappa_recon_images)
+                
+            
+            # test open 
+            
+            with h5py.File(os.path.join(grappa_dir, fname), 'r') as f :
+                
+                print(np.array(f["image_grappa"]).shape)

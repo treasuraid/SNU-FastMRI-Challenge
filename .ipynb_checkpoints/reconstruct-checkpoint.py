@@ -39,8 +39,12 @@ if __name__ == '__main__':
     if args.mode == "leaderboard":
         args.forward_dir = '../result' / args.net_name / 'reconstructions_leaderboard' / args.mask
         args.data_path = args.data_path / args.mask
-    else: 
+    elif args.mode == "val": 
+        args.forward_dir = "../result" / args.net_name / "reconstructions_val"
+    
+    else : 
         args.forward_dir = "../result" / args.net_name / "reconstructions_train"
+        
     
     print(args.forward_dir, args.data_path)
     

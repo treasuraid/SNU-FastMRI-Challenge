@@ -40,8 +40,8 @@ if __name__ == '__main__':
     from tqdm import tqdm
     import matplotlib.pyplot as plt 
     # 3 times 반복
-    data_dir = "../../Data/train/kspace" 
-    grappa_dir = "../../Data/grappa/train/" 
+    data_dir = "../../Data/leaderboard/acc4/kspace" 
+    grappa_dir = "../../Data/grappa/leaderboard/acc4" 
     
     
     for fname in tqdm(os.listdir(data_dir)) :
