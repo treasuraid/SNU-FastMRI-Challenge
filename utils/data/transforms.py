@@ -39,7 +39,10 @@ class DataTransform2nd:
         
         if self.aug : 
         
-            self.augmentation = T.Compose([T.RandomHorizontalFlip(p=0.5), T.RandomVerticalFlip(0,5), T.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            self.augmentation = T.Compose(
+                [T.RandomHorizontalFlip(p=0.5), 
+                 T.RandomVerticalFlip(p= 0.5), 
+                 T.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
             
             # mixup augmentation
             
@@ -48,7 +51,7 @@ class DataTransform2nd:
     def __call__(self, input_image, grappa_image, recon_image, target_image, attrs, fname, slice) : 
         
         if not self.isforward: 
-            target = to_tensor(target_image) 
+            target = to_tensor(target_image).unsqueeze(0) 
             maximum = attrs[self.max_key]
         else : 
             target = -1
@@ -56,22 +59,21 @@ class DataTransform2nd:
             
         # numpy ndarray to torch tensor and stack input_image, grappa_image, target_image
         
-        input_image = to_tensor(input_image)  
-        grappa_image = to_tensor(grappa_image)
-        recon_image = to_tensor(recon_image)
+        input_image = to_tensor(input_image).unsqueeze(0)  
+        grappa_image = to_tensor(grappa_image).unsqueeze(0) 
+        recon_image = to_tensor(recon_image).unsqueeze(0) 
         brightness = 1
         if self.aug : 
-            
             brightness = random.uniform(1.0, 2.0)
-            input_image = self.augmentation(input_image) * brightness
-            grappa_image = self.augmentation(grappa_image) * brightness 
-            recon_image = self.augmentation(recon_image) * brightness
-            target = self.augmentation(target) * brightness 
+            input_image = self.augmentation(input_image * brightness) 
+            grappa_image = self.augmentation(grappa_image * brightness)
+            recon_image = self.augmentation(recon_image * brightness)
+            target = self.augmentation(target * brightness)
             
-        input = torch.stack((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        input = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
         
         
-        return input, target.unsqueeze(0), maximum, fname, slice, brightness
+        return input, target, maximum, fname, slice, brightness
         
         # add augmentation code for input images
          

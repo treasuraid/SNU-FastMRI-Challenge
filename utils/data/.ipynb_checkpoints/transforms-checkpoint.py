@@ -14,6 +14,7 @@ from utils.model.fastmri import fft2c, ifft2c, rss_complex, complex_abs
 
 from typing import List, Optional, Union
 
+from torchvision import transforms as T
 from utils.data.helper import *
 
 def to_tensor(data):
@@ -26,6 +27,60 @@ def to_tensor(data):
         torch.Tensor: PyTorch version of data
     """
     return torch.from_numpy(data)
+
+
+# Transform for training image domain network
+class DataTransform2nd:
+    def __init__(self, isforward, max_key, edge = False, aug = False):
+        self.isforward = isforward
+        self.max_key = max_key
+        self.edge= edge 
+        self.aug = aug
+        
+        if self.aug : 
+        
+            self.augmentation = T.Compose(
+                [T.RandomHorizontalFlip(p=0.5), 
+                 T.RandomVerticalFlip(p= 0.5), 
+                 T.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            
+            # mixup augmentation
+            
+        
+            
+    def __call__(self, input_image, grappa_image, recon_image, target_image, attrs, fname, slice) : 
+        
+        if not self.isforward: 
+            target = to_tensor(target_image).unsqueeze(0) 
+            maximum = attrs[self.max_key]
+        else : 
+            target = -1
+            maximum = -1
+            
+        # numpy ndarray to torch tensor and stack input_image, grappa_image, target_image
+        
+        input_image = to_tensor(input_image).unsqueeze(0)  
+        grappa_image = to_tensor(grappa_image).unsqueeze(0) 
+        recon_image = to_tensor(recon_image).unsqueeze(0) 
+        brightness = 1
+        if self.aug : 
+            brightness = random.uniform(1.0, 2.0)
+            input_image = self.augmentation(input_image * brightness) 
+            grappa_image = self.augmentation(grappa_image * brightness)
+            recon_image = self.augmentation(recon_image * brightness)
+            target = self.augmentation(target * brightness)
+            
+        input = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        
+        
+        return input, target, maximum, fname, slice, brightness
+        
+        # add augmentation code for input images
+         
+        
+        
+        
+    
 
 class DataTransform:
     def __init__(self, isforward, max_key, edge=False, aug=False):
