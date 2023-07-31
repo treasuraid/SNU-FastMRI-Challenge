@@ -55,7 +55,7 @@ class DataTransform2nd:
         input = torch.stack((input_image, recon_image, grappa_image), dim = 0) # channel first 
         
         
-        return input, target, maximum, fname, slice 
+        return input, target.unsqueeze(0), maximum, fname, slice 
         
         # add augmentation code for input images
          

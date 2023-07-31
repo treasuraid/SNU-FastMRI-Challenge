@@ -68,7 +68,7 @@ if __name__ == '__main__':
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     args.val_dir.mkdir(parents=True, exist_ok=True)
 
-    wandb.init(project="fast-mri", config=vars(args))
+    wandb.init(project="fast-mri-2nd", config=vars(args))
     
     
     
