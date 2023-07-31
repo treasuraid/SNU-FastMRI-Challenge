@@ -7,7 +7,8 @@ import os, sys
 from pathlib import Path
 if os.getcwd() + '/utils/model/' not in sys.path:
     sys.path.insert(1, os.getcwd() + '/utils/model/')
-from utils.learning.train_part import train
+    
+from utils.learning.train_part_2nd import train
 
 if os.getcwd() + '/utils/common/' not in sys.path:
     sys.path.insert(1, os.getcwd() + '/utils/common/')
@@ -55,7 +56,7 @@ if __name__ == '__main__':
     
     
     # todo : if gpu-num == -1 then use cpu
-    train_2nd(args)
+    train(args)
     
     
     

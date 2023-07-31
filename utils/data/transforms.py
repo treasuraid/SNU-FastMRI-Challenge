@@ -27,6 +27,43 @@ def to_tensor(data):
     """
     return torch.from_numpy(data)
 
+
+# Transform for training image domain network
+class DataTransform2nd:
+    def __init__(self, isforward, max_key, edge = False, aug = False):
+        self.isforward = isforward
+        self.max_key = max_key
+        self.edge= edge 
+        self.aug = aug
+    
+    def __call__(self, input_image, grappa_image, recon_image, target_image, attrs, fname, slice) : 
+        
+        if not self.isforward: 
+            target = to_tensor(target_image) 
+            maximum = attrs[self.max_key]
+        else : 
+            target = -1
+            maximum = -1
+            
+        # numpy ndarray to torch tensor and stack input_image, grappa_image, target_image
+        
+        input_image = to_tensor(input_image)  
+        grappa_image = to_tensor(grappa_image)
+        recon_image = to_tensor(recon_image)
+
+        
+        input = torch.stack((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        
+        
+        return input, target, maximum, fname, slice 
+        
+        # add augmentation code for input images
+         
+        
+        
+        
+    
+
 class DataTransform:
     def __init__(self, isforward, max_key, edge=False, aug=False):
         self.isforward = isforward

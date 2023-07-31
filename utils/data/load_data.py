@@ -6,6 +6,63 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 import numpy as np
 
+import os
+
+class SliceData2nd(Dataset):
+    
+    def __init__(self, input_root, grappa_root, recon_root, transform, input_key, 
+                 target_key, forward=False, edge=False):
+        self.transform = transform
+        self.input_key = input_key
+        self.target_key = target_key 
+        self.forward = forward 
+        self.edge = edge
+        self.input_root = input_root / "image"
+        self.grappa_root = grappa_root
+        self.recon_root = recon_root
+        
+        self.input_examples = []
+        
+        
+        image_files = os.listdir(input_root)
+        
+        for fname in sorted(image_files):
+            num_slices = self._get_metadata(fname)
+            self.input_images += [(fname, slice_ind) for slice_ind in range(num_slices)]
+            
+
+        def _get_metadata(self, fname):
+            with h5py.File(fname, "r") as hf:
+                if self.input_key in hf.keys():
+                    num_slices = hf[self.input_key].shape[0]
+                elif self.target_key in hf.keys():
+                    num_slices = hf[self.target_key].shape[0]
+            return num_slices
+
+        def __len__(self):
+            return len(self.input_examples)
+        
+        def __getitem(self, idx):
+            input_fname, dataslice = self.input_examples[idx]
+        
+            # filename is identical for input, grappa, recon
+            
+            # load three images
+            
+            with open(os.path.join(input_root,input_fname), 'rb') as f:
+                input_image = np.array(f[self.input_key])[dataslice]
+                target_image = np.array(f[self.target_key])[dataslice]
+                attr = dict(f.attrs)
+            
+            with open(os.path.join(grappa_root,input_fname), 'rb') as f:
+                grappa_image = np.array(f[self.input_key])[dataslice]
+                
+            with open(os.path.join(recon_root,input_fname), 'rb') as f:
+                recon_image = np.array(f[self.input_key])[dataslice]
+            
+            return self.transform(input_image, grappa_image, recon_image, target_image, attr, input_fname, dataslice)
+
+
 class SliceData(Dataset):
     def __init__(self, root, transform, input_key, target_key, forward=False, edge=False):
         self.transform = transform
