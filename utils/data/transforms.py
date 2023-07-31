@@ -14,6 +14,7 @@ from utils.model.fastmri import fft2c, ifft2c, rss_complex, complex_abs
 
 from typing import List, Optional, Union
 
+from torchvision import transforms as T
 from utils.data.helper import *
 
 def to_tensor(data):
@@ -35,7 +36,15 @@ class DataTransform2nd:
         self.max_key = max_key
         self.edge= edge 
         self.aug = aug
-    
+        
+        if self.aug : 
+        
+            self.augmentation = T.Compose([T.RandomHorizontalFlip(p=0.5), T.RandomVerticalFlip(0,5), T.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            
+            # mixup augmentation
+            
+        
+            
     def __call__(self, input_image, grappa_image, recon_image, target_image, attrs, fname, slice) : 
         
         if not self.isforward: 
@@ -50,12 +59,19 @@ class DataTransform2nd:
         input_image = to_tensor(input_image)  
         grappa_image = to_tensor(grappa_image)
         recon_image = to_tensor(recon_image)
-
-        
+        brightness = 1
+        if self.aug : 
+            
+            brightness = random.uniform(1.0, 2.0)
+            input_image = self.augmentation(input_image) * brightness
+            grappa_image = self.augmentation(grappa_image) * brightness 
+            recon_image = self.augmentation(recon_image) * brightness
+            target = self.augmentation(target) * brightness 
+            
         input = torch.stack((input_image, recon_image, grappa_image), dim = 0) # channel first 
         
         
-        return input, target.unsqueeze(0), maximum, fname, slice 
+        return input, target.unsqueeze(0), maximum, fname, slice, brightness
         
         # add augmentation code for input images
          

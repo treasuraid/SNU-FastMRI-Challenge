@@ -37,16 +37,22 @@ def parse() :
     
     parser.add_argument('-t', '--data-path-train', type=Path, default='../../Data/train/', help='Directory of train data')
     parser.add_argument('-v', '--data-path-val', type=Path, default='../../Data/val/', help='Directory of validation data')
-    parser.add_argument('-r', '--data-path-reconstrution', type=Path, default='../../Data/test/', help='Directory of test data')
+    parser.add_argument('-r', '--data-path-reconstrution', type=Path, default='../result/varnet16_aug_resume_from_epoch12/', help='Directory of test data')
+    
+    # grappa and reconstruction
+    parser.add_argument("--mode", type=str, default="train", help="train or leaderboard or val", required=True, choices=["train", "leaderboard", "val"]) 
+    parser.add_argument('--grappa-path', type=Path, default='../../Data/grappa/', help='Directory of grappa data')
+    parser.add_argument('--recon-path', type=Path, default='../../Data/test/', help='Directory of reconstruction data')
+    
     
     parser.add_argument('--in-chans', type=int, default=1, help='Size of input channels for network')
     parser.add_argument('--out-chans', type=int, default=1, help='Size of output channels for network')
     parser.add_argument('--input-key', type=str, default='image_input', help='Name of input key')
     parser.add_argument('--target-key', type=str, default='image_label', help='Name of target key')
     parser.add_argument('--max-key', type=str, default='max', help='Name of max key in attributes')
-    parser.add_argument('--seed', type=int, default=430, help='Fix random seed')
+    parser.add_argument('--seed', type=int, default=2023, help='Fix random seed')
     
-    
+    parser.add_argument("--weight-decay", type=float, default=0.0001, help="Weight decay")
     args = parser.parse_args()
     
 
@@ -57,8 +63,6 @@ if __name__ == '__main__':
     
     # todo : if gpu-num == -1 then use cpu
     train(args)
-    
-    
     
     args.exp_dir = '../result' / args.net_name / 'checkpoints'
     args.val_dir = '../result' / args.net_name / 'reconstructions_val'

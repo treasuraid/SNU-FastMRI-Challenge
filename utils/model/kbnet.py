@@ -447,7 +447,6 @@ class KBNet_s(nn.Module):
         B, C, H, W = inp.shape
 
         inp = self.check_image_size(inp)
-        print(inp.shape)
         x = checkpoint.checkpoint(self.custom(self.intro), inp)
         
         # x = self.intro(inp)
@@ -467,9 +466,8 @@ class KBNet_s(nn.Module):
             x = checkpoint.checkpoint(self.custom(decoder), x)
 
         x = checkpoint.checkpoint(self.custom(self.ending), x)
-#         x = x + inp
 
-        return x[:, :, :H, :W]
+        return x[:, :, :H, :W] # re turn the second channel, which is the output of the network
 
     def check_image_size(self, x):
         _, _, h, w = x.size()
@@ -499,12 +497,13 @@ if __name__ == "__main__" :
     print('Number of parameters in the model : ', num_params)
     
     # count number of parameters in the model
-    macs, params = profile(net, inputs = (torch.randn(1,3,384,384).to("cuda"),))
+    macs, params = profile(net, inputs = (torch.randn(1,3,256,256).to("cuda"),))
     
     
-    random_input = torch.randn(1,3,384,384).to("cuda")
-    random_input.requires_grad = True
-    out = net(random_input)
-             
-    out.sum().backward()
+    out = net(torch.randn(1,3,384,384).to("cuda"))
+    
+    # test backward          
+    
+              
+    loss.backward()
     print(macs, params)

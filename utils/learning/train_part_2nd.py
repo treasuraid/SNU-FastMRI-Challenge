@@ -10,9 +10,11 @@ from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.unet import Unet
 from utils.model.kbnet import KBNet_l,  KBNet_s
+from utils.data.load_data import SliceData2nd 
+from utils.data.transforms import DataTransform2nd
 
-
-def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
+import wandb
+def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
     model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
@@ -25,12 +27,18 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type):
         maximum = maximum.cuda(non_blocking=True)
 
         output = model(input)
-        loss = loss_type(output, target, maximum)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+        loss = loss_type(output, target, maximum) / args.grad_accumulation 
+        
+        loss.backward()  
+        if ((iter + 1) % args.grad_accumulation) == 0:  
+            optimizer.step()  
+            optimizer.zero_grad()
+            
+        total_loss += loss.item() * args.grad_accumulation 
 
+
+        wandb.log({"batch_loss": loss.item() * args.grad_accumulation})
+        
         if iter % args.report_interval == 0:
             print(
                 f'Epoch = [{epoch:3d}/{args.num_epochs:3d}] '
@@ -52,7 +60,7 @@ def validate(args, model, data_loader):
 
     with torch.no_grad():
         for iter, data in enumerate(data_loader):
-            input, target, _, fnames, slices = data
+            input, target, _, fnames, slices, brightness = data
             input = input.cuda(non_blocking=True)
             output = model(input)
 
@@ -100,24 +108,42 @@ def train(args):
     torch.cuda.set_device(device)
     print('Current cuda device: ', torch.cuda.current_device())
     
-    model = Unet(in_chans = args.in_chans, out_chans = args.out_chans)
+    model = KBNet_s(img_channel=3, out_channel=1, width=64, middle_blk_num=12, enc_blk_nums=[2, 2, 4, 8],
+                 dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
     model.to(device=device)
     loss_type = SSIMLoss().to(device=device)
-    optimizer = torch.optim.Adam(model.parameters(), args.lr)
-
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay= args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 40, gamma= 0.2)
     best_val_loss = 1.
     start_epoch = 0
-
     
-    train_loader = create_data_loaders(data_path = args.data_path_train, args = args, shuffle=True)
-    val_loader = create_data_loaders(data_path = args.data_path_val, args = args)
-
+    
+    train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
+    val_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
+    
+    train_loader = SliceData2nd(args.data_path_train, 
+                                args.grappa_path / "train", 
+                                args.recon_path / "reconstruction_train",
+                                transform=train_transform,
+                                input_key = args.input_key,
+                                target_key= args.target_key)
+    
+    val_loader = SliceData2nd(args.data_path_val, 
+                              args.grappa_path / "val", 
+                              args.recon_path / "reconstruction_val",
+                              transform=val_transform,
+                              input_key = args.input_key,
+                              target_key= args.target_key)
+    
     val_loss_log = np.empty((0, 2))
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
         
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type)
-        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, loss_type, device)
+        
+        scheduler.step()
+        
+        val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
 
         val_loss_log = np.append(val_loss_log, np.array([[epoch, val_loss]]), axis=0)
         file_path = args.val_loss_dir / "val_loss_log"
@@ -128,12 +154,16 @@ def train(args):
 
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
+        
+        wandb.log({"train_loss": train_loss, "val_loss": val_loss})
+        
 
         save_model(args, args.exp_dir, epoch + 1, model, optimizer, best_val_loss, is_new_best)
         print(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'ValLoss = {val_loss:.4g} TrainTime = {train_time:.4f}s ValTime = {val_time:.4f}s',
         )
+        
 
         if is_new_best:
             print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@NewRecord@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
