@@ -465,11 +465,19 @@ if __name__ == "__main__" :
     
     net = KBNet_s(img_channel=3, out_channel=3, width=64, middle_blk_num=12, enc_blk_nums=[2, 2, 4, 8],
                  dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5)
+    
+    net = net.to("cuda")
     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
     
     print('Number of parameters in the model : ', num_params)
     
     # count number of parameters in the model
-    macs, params = profile(net, inputs = (torch.randn(1,3,256,256),))
+    macs, params = profile(net, inputs = (torch.randn(1,3,256,256).to("cuda"),))
     
+    
+    out = net(torch.randn(1,3,384,384).to("cuda"))
+              
+    loss = 1 - torch.mean(out)
+              
+    loss.backward()
     print(macs, params)

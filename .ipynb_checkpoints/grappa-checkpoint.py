@@ -24,7 +24,7 @@ def grappa_recon(kspace: np.ndarray, mask: np.ndarray):
     right = np.argmin(squeezed_mask[cent:], axis=0)
     num_low_freqs = min(left, right)
     calib = kspace[:, :, cent - num_low_freqs:cent + num_low_freqs].copy()
-    grappa_result = grappa(kspace, calib, kernel_size=(5, 5), coil_axis=0)
+    grappa_result = grappa(kspace, calib, kernel_size=(7, 7), coil_axis=0)
     grappa_result = iff2c(grappa_result)
 
     # crop to [384, 384]
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt 
     # 3 times 반복
     data_dir = "../../Data/leaderboard/acc4/kspace" 
-    grappa_dir = "../../Data/grappa/leaderboard/acc4" 
+    grappa_dir = "../../Data/grappa/leaderboard/acc4_7" 
     
     
     for fname in tqdm(os.listdir(data_dir)) :
