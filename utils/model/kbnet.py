@@ -447,7 +447,8 @@ class KBNet_s(nn.Module):
         B, C, H, W = inp.shape
 
         inp = self.check_image_size(inp)
-        inp = checkpoint.checkpoint(self.custom(self.intro), inp)
+        print(inp.shape)
+        x = checkpoint.checkpoint(self.custom(self.intro), inp)
         
         # x = self.intro(inp)
 
@@ -498,12 +499,12 @@ if __name__ == "__main__" :
     print('Number of parameters in the model : ', num_params)
     
     # count number of parameters in the model
-    macs, params = profile(net, inputs = (torch.randn(1,3,256,256).to("cuda"),))
+    macs, params = profile(net, inputs = (torch.randn(1,3,384,384).to("cuda"),))
     
     
-    out = net(torch.randn(1,3,384,384).to("cuda"))
-              
-    loss = 1 - torch.mean(out)
-              
-    loss.backward()
+    random_input = torch.randn(1,3,384,384).to("cuda")
+    random_input.requires_grad = True
+    out = net(random_input)
+             
+    out.sum().backward()
     print(macs, params)

@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 
+import torch.utils.checkpoint as checkpoint 
 from einops import rearrange
 
 import os 
@@ -223,8 +224,23 @@ class KBNet_l(nn.Module):
 
         self.output = nn.Conv2d(int(dim * 2 ** 1), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
+
+    def custom(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0])
+            return inputs
+        return custom_forward
+    
     def forward(self, inp_img):
+        
+        # change forward to use gradient checkpointing
+
+
+        
         inp_enc_level1 = self.patch_embed(inp_img)
+        
+        # inp_enc_level1 = checkpoint(self.custom(self.encoder_level1), inp_enc_level1)    
+        
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
 
         inp_enc_level2 = self.down1_2(out_enc_level1)
@@ -419,27 +435,38 @@ class KBNet_s(nn.Module):
 
         self.padder_size = 2 ** len(self.encoders)
 
+    def custom(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0])
+            return inputs
+        return custom_forward
+    
+    
         
     def forward(self, inp):
         B, C, H, W = inp.shape
+
         inp = self.check_image_size(inp)
-        x = self.intro(inp)
+        print(inp.shape)
+        x = checkpoint.checkpoint(self.custom(self.intro), inp)
+        
+        # x = self.intro(inp)
 
         encs = []
 
         for encoder, down in zip(self.encoders, self.downs):
-            x = encoder(x)
+            x = checkpoint.checkpoint(self.custom(encoder), x)
             encs.append(x)
-            x = down(x)
+            x = checkpoint.checkpoint(self.custom(down), x)
 
-        x = self.middle_blks(x)
+        x = checkpoint.checkpoint(self.custom(self.middle_blks), x)
 
         for decoder, up, enc_skip in zip(self.decoders, self.ups, encs[::-1]):
-            x = up(x)
+            x = checkpoint.checkpoint(self.custom(up), x) 
             x = x + enc_skip
-            x = decoder(x)
+            x = checkpoint.checkpoint(self.custom(decoder), x)
 
-        x = self.ending(x)
+        x = checkpoint.checkpoint(self.custom(self.ending), x)
 #         x = x + inp
 
         return x[:, :, :H, :W]
@@ -472,12 +499,12 @@ if __name__ == "__main__" :
     print('Number of parameters in the model : ', num_params)
     
     # count number of parameters in the model
-    macs, params = profile(net, inputs = (torch.randn(1,3,256,256).to("cuda"),))
+    macs, params = profile(net, inputs = (torch.randn(1,3,384,384).to("cuda"),))
     
     
-    out = net(torch.randn(1,3,384,384).to("cuda"))
-              
-    loss = 1 - torch.mean(out)
-              
-    loss.backward()
+    random_input = torch.randn(1,3,384,384).to("cuda")
+    random_input.requires_grad = True
+    out = net(random_input)
+             
+    out.sum().backward()
     print(macs, params)
