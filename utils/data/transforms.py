@@ -189,9 +189,12 @@ class VarNetDataTransform:
             mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(4, 8)]
         )
 
-        masked_kspace, mask = apply_mask(
-            kspace, mask_func, seed, None
-        )
+        mask = mask_func(kspace, seed)
+        
+        print("mask shape : ", mask.shape) # check mask dimension
+        # augment mask 
+        mask = np.roll(mask, random.randint(-2, 2), axis=-2)
+        masked_kspace = kspace * mask + 0.0
 
         return (
             mask.byte(),

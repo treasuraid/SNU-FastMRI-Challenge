@@ -67,8 +67,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             target = target * loss_mask
 
         loss_ssim  = loss_type(output_image, target, maximum) 
-        loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
-        loss = loss_fft + loss_ssim 
+        # loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
+        loss =  loss_ssim 
         # if loss.item() > 0.04 :
         #     print(f"loss {loss.item()} in {fname}")
         loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
