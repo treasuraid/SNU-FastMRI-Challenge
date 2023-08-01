@@ -190,7 +190,7 @@ class VarNetDataTransform:
         )
 
         mask = mask_func(kspace, seed)
-        
+        print(mask.flatten())
         print("mask shape : ", mask.shape) # check mask dimension
         # augment mask 
         mask = np.roll(mask, random.randint(-2, 2), axis=-2)
@@ -513,12 +513,14 @@ class DataAugmentor:
         # Set augmentation probability
         if self.aug_on:
             p = self.schedule_p()
+            print(p)
             self.augmentation_pipeline.set_augmentation_strength(p)
         else:
             p = 0.0
 
         # Augment if needed
-        if self.aug_on and p > -0.0001:
+        if self.aug_on and p > 0.0:
+            print("augmenting")
             kspace, target = self.augmentation_pipeline.augment_from_kspace(kspace,
                                                                             target_size=target_size,
                                                                             max_train_size=self.max_train_resolution)
