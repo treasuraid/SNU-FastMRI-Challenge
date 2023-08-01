@@ -575,7 +575,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_strength',
             type=float,
-            default=0.55,
+            default=0.4,
             help='Augmentation strength, combined with --aug_schedule determines the augmentation strength in each epoch'
         )
         parser.add_argument(
@@ -643,7 +643,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_weight_rot90',
             type=float,
-            default=1.0,
+            default=0.0,
             help='Weight of probability of rotation by multiples of 90 degrees. Augmentation probability will be multiplied by this constant'
         )
         parser.add_argument(
@@ -655,7 +655,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_weight_flipv',
             type=float,
-            default=1.0,
+            default=0.0,
             help='Weight of vertical flip probability. Augmentation probability will be multiplied by this constant'
         )
 
@@ -665,19 +665,19 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_max_translation_x',
             type=float,
-            default=0.125,
+            default=0.1,
             help='Maximum translation applied along the x axis as fraction of image width'
         )
         parser.add_argument(
             '--aug_max_translation_y',
             type=float,
-            default=0.125,
+            default=0.1,
             help='Maximum translation applied along the y axis as fraction of image height'
         )
         parser.add_argument(
             '--aug_max_rotation',
             type=float,
-            default=180.,
+            default=20.0,
             help='Maximum rotation applied in either clockwise or counter-clockwise direction in degrees.'
         )
         parser.add_argument(
@@ -695,7 +695,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_max_scaling',
             type=float,
-            default=0.25,
+            default=0.1,
             help='Maximum scaling applied as fraction of image dimensions. If set to s, a scaling factor between 1.0-s and 1.0+s will be applied.'
         )
 
