@@ -14,7 +14,8 @@ from utils.model.fastmri import fft2c, ifft2c, rss_complex, complex_abs
 
 from typing import List, Optional, Union
 
-from torchvision import transforms as T
+from torchvision import transforms as transforms
+from torchvision.transforms import functional as TF
 from utils.data.helper import *
 
 def to_tensor(data):
@@ -39,10 +40,10 @@ class DataTransform2nd:
         
         if self.aug : 
         
-            self.augmentation = T.Compose(
-                [T.RandomHorizontalFlip(p=0.5), 
-                 T.RandomVerticalFlip(p= 0.5), 
-                 T.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            self.augmentation = transforms.Compose(
+                [transforms.RandomHorizontalFlip(p=0.5), 
+                 transforms.RandomVerticalFlip(p= 0.5), 
+                 transforms.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
             
             # mixup augmentation
             
@@ -129,6 +130,7 @@ class VarNetDataTransform:
                 generator seed from the filename. This ensures that the same
                 mask is used for all the slices of a given volume every time.
         """
+        print("use_varnet_transform")
 
         self.use_seed = use_seed
         if augmentor is not None:
@@ -174,6 +176,7 @@ class VarNetDataTransform:
         # Apply augmentations if needed
         if self.use_augment:
             if self.augmentor.schedule_p() > -0.0001:
+                
                 kspace, target = self.augmentor(kspace, target.shape)
 
 
@@ -182,22 +185,19 @@ class VarNetDataTransform:
         # acq_start = attrs["padding_left"]
         # acq_end = attrs["padding_right"]
 
-        
-        
-
         mask_func = create_mask_for_mask_type(
-            mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(4, 8)]
+            mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(5, 7)]
         )
 
-        mask = mask_func(kspace, seed)
-        print(mask.flatten())
-        print("mask shape : ", mask.shape) # check mask dimension
-        # augment mask 
-        mask = np.roll(mask, random.randint(-2, 2), axis=-2)
-        masked_kspace = kspace * mask + 0.0
+        seed = None if not self.use_seed else tuple(map(ord, fname))
 
+        mask = mask_func(np.array(kspace.shape), seed)
+        # augment mask 
+        # mask = np.roll(mask, random.randint(-2, 2), axis=-2)
+        # print(mask.flatten() != 0)
+        masked_kspace = kspace * mask + 0.0
         return (
-            mask.byte(),
+            mask.float(),
             masked_kspace,
             -1,
             target,
@@ -313,7 +313,6 @@ class AugmentationPipeline:
     def augment_image(self, im, max_output_size=None):
         # Trailing dims must be image height and width (for torchvision)
         im = complex_channel_first(im)
-
         # ---------------------------
         # pixel preserving transforms
         # ---------------------------
@@ -411,8 +410,14 @@ class AugmentationPipeline:
 
     def augment_from_kspace(self, kspace, target_size, max_train_size=None):
         im = ifft2c(kspace)
+        
+        # roll image to make brain center
+        # replace np.roll(np.roll(np.fft.ifft2(kspace), shift=h // 2, axis=1), shift=w // 2, axis=2) with tensor operations
+                
         im = self.augment_image(im, max_output_size=max_train_size)
+        # print(im.shape, target_size)
         target = self.im_to_target(im, target_size)
+         
         kspace = fft2c(im)
         return kspace, target
 
@@ -513,14 +518,13 @@ class DataAugmentor:
         # Set augmentation probability
         if self.aug_on:
             p = self.schedule_p()
-            print(p)
             self.augmentation_pipeline.set_augmentation_strength(p)
         else:
             p = 0.0
 
         # Augment if needed
-        if self.aug_on and p > 0.0:
-            print("augmenting")
+        if self.aug_on and p > -0.00001:
+            # print("augmenting")
             kspace, target = self.augmentation_pipeline.augment_from_kspace(kspace,
                                                                             target_size=target_size,
                                                                             max_train_size=self.max_train_resolution)
@@ -565,19 +569,19 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_schedule',
             type=str,
-            default='exp',
+            default='ramp',
             help='Type of data augmentation strength scheduling. Options: constant, ramp, exp'
         )
         parser.add_argument(
             '--aug_delay',
             type=int,
-            default=0,
+            default=-0,
             help='Number of epochs at the beginning of training without data augmentation. The schedule in --aug_schedule will be adjusted so that at the last epoch the augmentation strength is --aug_strength.'
         )
         parser.add_argument(
             '--aug_strength',
             type=float,
-            default=0.4,
+            default=0.25,
             help='Augmentation strength, combined with --aug_schedule determines the augmentation strength in each epoch'
         )
         parser.add_argument(
@@ -673,7 +677,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_max_translation_y',
             type=float,
-            default=0.1,
+            default=0,
             help='Maximum translation applied along the y axis as fraction of image height'
         )
         parser.add_argument(

@@ -255,13 +255,18 @@ class VarNet(nn.Module):
             inputs = module(inputs[0], inputs[1], inputs[2], inputs[3])
             return inputs
         return custom_forward
-
+    
+    def custom2(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0], inputs[1])
+            return inputs
+        return custom_forward
     def print(self):
         for param in self.cascades[0].parameters():
             print(param.data)
 
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        sens_maps = self.sens_net(masked_kspace, mask)
+        sens_maps = checkpoint.checkpoint(self.custom2(self.sens_net), masked_kspace, mask) 
         kspace_pred = masked_kspace.clone()
 
         for cascade in self.cascades:

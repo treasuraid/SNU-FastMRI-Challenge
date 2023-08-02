@@ -1,35 +1,67 @@
-import parser
 import os
-from load_data import create_data_loaders
+
 import numpy as np
 from matplotlib import pyplot as plt
+from kornia.morphology import dilation, erosion 
+import torch 
+from train import parse
 
+from utils.data.load_data import create_data_loaders
+
+import h5py
 if __name__ == '__main__':
 
-    args = parser.ArgumentParser(description='PyTorch Variational Network MRI Reconstruction')
-    args.add_argument('--batch_size', type=int, default=1, help='Batch size should be 1')
-    args.add_argument('--input_key', type=str, default='kspace', help='Name of input key')
-    args.add_argument('--target_key', type=str, default='image_label', help='Name of target key')
-    args.add_argument('--max_key', type=str, default='max', help='Name of max key')
-    args.add_argument('--data_path', type=str, default='root/Data/leaderboard/', help='Directory of test data')
-    parser.add_argument('-m', '--mask', type=str, default='acc4', choices=['acc4', 'acc8'], help='type of mask | acc4 or acc8')
 
+    # recon_dir = "../result/varnet_16_fix_lossmask/reconstructions_val"
+    # val_dir = "../../Data/val/image"
+    
+    # k = torch.ones(3,3).float()
+    # for fname in os.listdir(val_dir) :
+        
+    #     with h5py.File(os.path.join(val_dir, fname)) as hf :
+    #         print(hf.keys())
+            
+    #         for i, slice in enumerate(hf["image_label"]) :
+                
+    #             # plt.imsave(os.path.join("./garage2", fname[:-3] + ".png"), slice)
+                
+    #             # erosion and dilation
+    #             loss_mask = torch.from_numpy(slice > 0.00001).float().unsqueeze(0).unsqueeze(0)
+    #             loss_mask  = erosion(loss_mask, k)
+    #             for i in range(10):
+    #                 loss_mask = dilation(loss_mask, k)
+    #             for i in range(9):
+    #                 loss_mask = erosion(loss_mask, k)
+    #             loss_mask = loss_mask.squeeze(0).squeeze(0).numpy()
+                
+    #             plt.imsave(os.path.join("./garage2", fname[:-3] +  "_" + str(i) + "_mask_ero1.png"), (loss_mask * slice) > 0)
+    
+    args = parse() 
+    
+    import utils.model.fastmri as fastmri
+    
+    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=True)
+    from tqdm import tqdm
+    k = torch.ones(3,3).float()
+    for iter, data in enumerate(tqdm(train_loader)):
+        mask, kspace, kspace_origin, target, edge, maximum, fname, _, = data
+        
 
-
-    args = args.parse_args()
-
-    forward_loader = create_data_loaders(data_path=args.data_path, args = args, isforward = True)
-
-    for i, data in enumerate(forward_loader):
-        for (mask, kspace, image, _, _, fnames, slices) in forward_loader:
-            # visualize mask and image in 1 frame
-            # kspace
-            mask = mask.numpy()
-            # expand mask to 2d array for visualization
-            mask = mask.flatten()
-            mask = np.vstack([mask] * kspace.shape[-3])
-
-            print(np.sum(mask))
-
-            # visualize mask
-
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace)), dim=1) 
+        
+        # crop to 384 x 384 
+        result = result[..., result.shape[-2] //2 - 192 : result.shape[-2] //2 + 192, result.shape[-1] //2 - 192 : result.shape[-1] //2 + 192]
+        
+        loss_mask  = (target > 2e-5).float().unsqueeze(0)
+            # for 1 time 
+        loss_mask  = erosion(loss_mask, k)
+        # for 15 times dilation 
+        for i in range(15):
+            loss_mask = dilation(loss_mask, k)
+        for i in range(14):
+            loss_mask = erosion(loss_mask, k)
+        target = target.numpy()  
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + ".png"), target[0])
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_mask.png"), loss_mask.squeeze(0).squeeze(0).numpy() * target[0])
+        
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_recon.png"), result[0])

@@ -49,10 +49,15 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         kspace = kspace.to(device)
         target = target.to(device)
         maximum = maximum.to(device)
-        kspace_origin = kspace_origin.to(device)
+        # kspace_origin = kspace_origin.to(device)
+        kspace.requires_grad = True
+        mask.requires_grad = True
+        target.requires_grad = True
+        
+        
         output_image = model(kspace, mask)
         if args.loss_mask:
-            loss_mask  = (target > 5e-5).float().unsqueeze(0)
+            loss_mask  = (target > 2e-5).float().unsqueeze(0)
             # for 1 time 
             loss_mask  = erosion(loss_mask, k)
             # for 15 times dilation 
@@ -78,9 +83,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             if args.grad_norm > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
             optimizer.step()
-
-            if args.scheduler is not None:
-                scheduler.step()
+            
             optimizer.zero_grad()
 
         total_loss += loss.item() * args.grad_accumulation
@@ -123,7 +126,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
             output = model(kspace, mask)
             if args.loss_mask:
-                loss_mask  = (target > 5e-5).float().unsqueeze(0)
+                loss_mask  = (target > 2e-5).float().unsqueeze(0)
             # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
@@ -232,9 +235,9 @@ def train(args):
     val_dataset, val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
 
 #     # test saving and validation
-    save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
-    print(val_loss.item()/num_subjects)
+    # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
+    # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+    # print(val_loss.item()/num_subjects)
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
@@ -244,6 +247,8 @@ def train(args):
         # train
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, scheduler, loss_type, device)
 
+        if args.scheduler is not None:
+            scheduler.step()
         # validate
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
 
