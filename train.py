@@ -83,6 +83,7 @@ def parse():
     # parser.add_argument("--aug_strength", type=float, default=0.5, help="Augmentation strength")
     # parser.add_argument("--aug_schedule", type=str, default="ramp", choices = ["constant", "ramp", "exponent"], help="Augmentation schedule")
 
+    parser.add_argument("--wrs", action= "store_true", default=False, help="Weighted random sampling") 
     DataAugmentor.add_augmentation_specific_args(parser)
 
 

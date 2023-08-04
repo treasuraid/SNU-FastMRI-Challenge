@@ -40,11 +40,11 @@ if __name__ == '__main__':
     
     import utils.model.fastmri as fastmri
     
-    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=True)
+    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=True, aug=False)
     from tqdm import tqdm
     k = torch.ones(3,3).float()
     for iter, data in enumerate(tqdm(train_loader)):
-        mask, kspace, kspace_origin, target, edge, maximum, fname, _, = data
+        mask, kspace, kspace_origin, target, edge, maximum, fname, slice, = data
         
 
         result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace)), dim=1) 
@@ -61,7 +61,7 @@ if __name__ == '__main__':
         for i in range(14):
             loss_mask = erosion(loss_mask, k)
         target = target.numpy()  
-        plt.imsave(os.path.join("./garage1", fname[0][:-3] + ".png"), target[0])
-        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_mask.png"), loss_mask.squeeze(0).squeeze(0).numpy() * target[0])
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) +  ".png"), target[0])
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) +  "_mask.png"), loss_mask.squeeze(0).squeeze(0).numpy() * target[0])
         
-        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_recon.png"), result[0])
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) + "_recon.png"), result[0])

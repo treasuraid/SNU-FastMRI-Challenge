@@ -106,6 +106,7 @@ class DataTransform:
         masked_kspace = to_tensor(input * mask)
         origin_kspace = to_tensor(input)
         masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
+        
         mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
 
         if self.edge:
@@ -179,22 +180,17 @@ class VarNetDataTransform:
                 
                 kspace, target = self.augmentor(kspace, target.shape)
 
-
-        ## paddingleft? paddingright?
-        seed = None if not self.use_seed else tuple(map(ord, fname))
-        # acq_start = attrs["padding_left"]
-        # acq_end = attrs["padding_right"]
-
-        mask_func = create_mask_for_mask_type(
-            mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(5, 7)]
-        )
-
-        seed = None if not self.use_seed else tuple(map(ord, fname))
-
-        mask = mask_func(np.array(kspace.shape), seed)
-        # augment mask 
-        # mask = np.roll(mask, random.randint(-2, 2), axis=-2)
-        # print(mask.flatten() != 0)
+        if np.random.rand() > 0.5:
+            # augment mask or not
+            seed = None if not self.use_seed else tuple(map(ord, fname))
+            mask_func = create_mask_for_mask_type(
+                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(5, 7)]
+            )
+            seed = None if not self.use_seed else tuple(map(ord, fname))
+            mask = mask_func(np.array(kspace.shape), seed)
+        else :
+            mask = np.roll(mask, random.randint(-2, 2), axis=0)
+            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
         masked_kspace = kspace * mask + 0.0
         return (
             mask.float(),

@@ -2,7 +2,7 @@ import h5py
 import random
 from utils.data.transforms import DataTransform, VarNetDataTransform, DataAugmentor
 from utils.model.fastmri.data.subsample import create_mask_for_mask_type
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler 
 from pathlib import Path
 import numpy as np
 
@@ -72,6 +72,7 @@ class SliceData(Dataset):
         self.forward = forward
         self.image_examples = []
         self.kspace_examples = []
+        self.weights = []
         self.edge = edge
         if not forward:
             image_files = list(Path(root / "image").iterdir())
@@ -83,7 +84,10 @@ class SliceData(Dataset):
         for fname in sorted(kspace_files):
             num_slices = self._get_metadata(fname)
             self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
-
+            # 2 times more weight for 1 slice than last slice and sum of weights in each fname is 1
+            # print([(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)], sum([(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)]), num_slices)
+            self.weights += [(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)]
+        self.weights = np.array(self.weights)      
 
     def _get_metadata(self, fname):
         with h5py.File(fname, "r") as hf:
@@ -159,6 +163,7 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= Fa
         # #mask = create_mask_for_mask_type(
         #     "equispaced", 0.08
         # )
+            
         data_storage = SliceData(
             root=data_path,
             transform=VarNetDataTransform(augmentor, use_seed=False),
@@ -167,13 +172,23 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= Fa
             forward=isforward,
             edge=args.edge,
         )
-        data_loader = DataLoader(
-            dataset=data_storage,
-            batch_size=args.batch_size,
-            shuffle=shuffle,
-            num_workers=args.num_workers,
-            collate_fn=collate_fn if args.collate else None,
-        )
+        if args.wrs:
+            print("Using Weighted Random Sampler")
+            data_loader = DataLoader(
+                dataset=data_storage,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                collate_fn=collate_fn if args.collate else None,
+                sampler=WeightedRandomSampler(data_storage.weights, len(data_storage.weights)),
+            )
+        else :
+            data_loader = DataLoader(
+                dataset=data_storage,
+                batch_size=args.batch_size,
+                shuffle=shuffle,
+                num_workers=args.num_workers,
+                collate_fn=collate_fn if args.collate else None,
+            )
 
     return data_storage, data_loader
 

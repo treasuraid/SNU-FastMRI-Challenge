@@ -37,14 +37,13 @@ def ssim_loss(gt, pred, maxval=None):
     """
     maxval = gt.max() if maxval is None else maxval
 
-    ssim = 0
+    ssim = [0 for _ in range(gt.shape[0])]
     for slice_num in range(gt.shape[0]):
-        ssim = ssim + structural_similarity(
+        ssim[slice_num] = structural_similarity(
             gt[slice_num], pred[slice_num], data_range=maxval
         )
-
-    ssim = ssim / gt.shape[0]
-    return 1 - ssim
+        
+    return 1 - np.array(ssim)
 
 def seed_fix(n):
     torch.manual_seed(n)

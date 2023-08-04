@@ -10,7 +10,7 @@ import requests
 from tqdm import tqdm
 from pathlib import Path
 import copy
-
+import pandas as pd
 
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
@@ -116,7 +116,9 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
     targets = defaultdict(dict)
     start = time.perf_counter()
     k = torch.ones(3,3).float().to(device)
-
+    # maintain the csv file for ssim score
+    df = pd.DataFrame(columns = [i for i in range(0, 30)])
+    
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
             mask, kspace, _, target, edge, _, fnames, slices = data
@@ -148,7 +150,23 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
         reconstructions[fname] = np.stack([out for _, out in sorted(reconstructions[fname].items())])
     for fname in targets:
         targets[fname] = np.stack([out for _, out in sorted(targets[fname].items())])
-    metric_loss = sum([ssim_loss(targets[fname], reconstructions[fname]) for fname in reconstructions])
+    
+    # person mean -> slice mean -> ssim 
+    # key -> list of ssim scoreum
+    metric_loss = 0
+    num_total_slice = 0 
+    for fname in reconstructions.keys():
+        metric_losses = ssim_loss(targets[fname], reconstructions[fname])
+        metric_loss += np.sum(metric_losses)
+        num_total_slice += len(metric_losses) 
+        if len(metric_losses) < 30:
+            metric_losses = np.append(metric_losses, np.zeros(30 - len(metric_losses)))
+        
+        df.loc[fname]  = list(metric_losses) 
+    
+    metric_loss = metric_loss / num_total_slice
+    df.to_csv(os.path.join(args.val_loss_dir, "ssim_score_{}.csv".format(args.loss_mask)))
+    
     num_subjects = len(reconstructions)
     return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
 
@@ -229,15 +247,15 @@ def train(args):
     best_val_loss = 1.
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
-
-
+    
     train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
-    val_dataset, val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
-
+    _ , val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
+    
+    
 #     # test saving and validation
     # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
     # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
-    # print(val_loss.item()/num_subjects)
+    # print(val_loss)
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
@@ -256,8 +274,8 @@ def train(args):
         # cal loss to tensor
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
-        num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
-        val_loss = val_loss / num_subjects
+        # num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
+        # val_loss = val_loss / num_subjects
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
         
