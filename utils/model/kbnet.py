@@ -386,6 +386,8 @@ class KBNet_s(nn.Module):
     def __init__(self, img_channel=3, out_channel=1, width=64, middle_blk_num=12, enc_blk_nums=[2, 2, 4, 8],
                  dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=False, ffn_scale=2):
         super().__init__()
+        self.img_channel = img_channel
+        self.out_channel = out_channel
         basicblock = eval(basicblock)
 
         self.intro = nn.Conv2d(in_channels=img_channel, out_channels=width, kernel_size=3, padding=1, stride=1,
@@ -467,8 +469,8 @@ class KBNet_s(nn.Module):
 
         x = checkpoint.checkpoint(self.custom(self.ending), x)
 
-        return x[:, :, :H, :W] # re turn the second channel, which is the output of the network
-
+        return x[:, :, :H, :W] + inp if self.img_channel == self.out_channel else x[:,:,:H,:W]# re turn the second channel, which is the output of the network
+    
     def check_image_size(self, x):
         _, _, h, w = x.size()
         mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size

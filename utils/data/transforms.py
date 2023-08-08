@@ -29,6 +29,40 @@ def to_tensor(data):
     """
     return torch.from_numpy(data)
 
+class MultiDataTransform2nd:
+    def __init__(self, isforward, max_key, edge = False, aug = False):
+        self.isforward = isforward
+        self.max_key = max_key
+        self.edge= edge 
+        self.aug = aug
+        
+        if self.aug : 
+        
+            self.augmentation = transforms.Compose(
+                [transforms.RandomHorizontalFlip(p=0.5), 
+                 transforms.RandomVerticalFlip(p= 0.5), 
+                 transforms.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            
+            # mixup augmentation
+    def __call__(self, recon_image, target_image, attrs, fname, slice) : 
+        
+        if not self.isforward: 
+            targets = to_tensor(target_image)
+            maximum = torch.Tensor(attrs[self.max_key] * np.ones(len(target_image)))
+        else : 
+            targets = torch.Tensor([-1]*len(target_image))
+            maximum = torch.Tensor([-1]*len(target_image))
+
+        recons = to_tensor(recon_image)
+        
+        if self.aug : 
+            brightness = random.uniform(1.0, 2.0)
+            recons = self.augmentation(recon_image * brightness) 
+            targets = self.augmentation(targets * brightness) 
+            maximum = self.augmentation(maximum * brightness)  
+        return recons, targets, maximum, fname, slice, brightness
+        
+
 
 # Transform for training image domain network
 class DataTransform2nd:
@@ -39,7 +73,7 @@ class DataTransform2nd:
         self.aug = aug
         
         if self.aug : 
-        
+            
             self.augmentation = transforms.Compose(
                 [transforms.RandomHorizontalFlip(p=0.5), 
                  transforms.RandomVerticalFlip(p= 0.5), 
@@ -180,7 +214,7 @@ class VarNetDataTransform:
                 
                 kspace, target = self.augmentor(kspace, target.shape)
 
-        if np.random.rand() > 0.5:
+        if np.random.rand() > 2:
             # augment mask or not
             seed = None if not self.use_seed else tuple(map(ord, fname))
             mask_func = create_mask_for_mask_type(

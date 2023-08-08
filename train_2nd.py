@@ -39,7 +39,6 @@ def parse() :
     
     # grappa and reconstruction
     parser.add_argument("--mode", type=str, default="train", help="train or leaderboard or val",choices=["train", "leaderboard", "val"]) 
-    parser.add_argument('--grappa-path', type=Path, default='../../Data/grappa/', help='Directory of grappa data')
     parser.add_argument('--recon-path', type=Path, default='../result/varnet_16_aug_resume_from_epoch12/', help='Directory of recon data')
     
     
@@ -57,6 +56,8 @@ def parse() :
     parser.add_argument("--aug", type=bool, default=True)
     
     parser.add_argument("--grad_accumulation", type = int, default = 16)
+    
+    parser.add_argument("--multi-cahnnel", type = bool, default = False)
     args = parser.parse_args()
     
     return args 
