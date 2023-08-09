@@ -51,8 +51,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         maximum = maximum.to(device)
         # kspace_origin = kspace_origin.to(device)
         kspace.requires_grad = True
-        mask.requires_grad = True
-        target.requires_grad = True
+        # mask.requires_grad = True
+        # target.requires_grad = True
         
         
         output_image = model(kspace, mask)
@@ -217,7 +217,7 @@ def train(args):
     print_model_num_parameters(model)
     
     model = model.to(device=device)
-    optimizer = torch.optim.RAdam(model.parameters(), args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=0)
 
     # get scheduler
     if args.scheduler is not None:

@@ -17,11 +17,16 @@ from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 
+from kornia.morphology import dilation, erosion 
+
 def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
     model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
     total_loss = 0.
+
+    k = torch.ones(3,3).float().to(device)
+
 
     for iter, data in enumerate(tqdm(data_loader)):
         input, target, maximum, _, _, brightness = data
@@ -42,12 +47,19 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
 #         print(output.shape, target.shape, maximum)
         loss = loss_type(output, target, maximum) / args.grad_accumulation 
         loss.backward()  
-        if ((iter + 1) % args.grad_accumulation) == 0:  
-            optimizer.step()  
-            optimizer.zero_grad()
+        if args.loss_mask : 
+                loss_mask  = (target > 2e-5).float().unsqueeze(0)
+                # for 1 time 
+                loss_mask  = erosion(loss_mask, k)
+                for i in range(15):
+                    loss_mask = dilation(loss_mask, k)
+                for i in range(14):
+                    loss_mask = erosion(loss_mask, k)
+                loss_mask = loss_mask.squeeze(0)
+                output= output * loss_mask
+                target = target * loss_mask 
             
         total_loss += loss.item() * args.grad_accumulation 
-
 
         wandb.log({"batch_loss": loss.item() * args.grad_accumulation})
         
@@ -69,6 +81,7 @@ def validate(args, model, data_loader, device):
     targets = defaultdict(dict)
     inputs = defaultdict(dict)
     start = time.perf_counter()
+    k = torch.ones(3,3).float().to(device)
 
     df = pd.DataFrame(columns = [i for i in range(0, 30)])
     with torch.no_grad():
@@ -83,8 +96,16 @@ def validate(args, model, data_loader, device):
             output = output.squeeze(0)
             target = target.squeeze(0)
             if args.loss_mask : 
-                output = (target > (2e-5 * brightness[:,None,None]))*output
-                target = (target > (2e-5 * brightness[:,None,None])) * target
+                loss_mask  = (target > 2e-5).float().unsqueeze(0)
+            # for 1 time 
+                loss_mask  = erosion(loss_mask, k)
+                for i in range(15):
+                    loss_mask = dilation(loss_mask, k)
+                for i in range(14):
+                    loss_mask = erosion(loss_mask, k)
+                loss_mask = loss_mask.squeeze(0)
+                output= output * loss_mask
+                target = target * loss_mask 
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()

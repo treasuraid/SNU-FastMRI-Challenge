@@ -77,7 +77,7 @@ class MultiSliceData2nd(Dataset):
         for fname in sorted(image_files):
             num_slices = self._get_metadata(os.path.join(input_root, fname))
             self.input_examples += [(fname, slice_ind) for slice_ind in range(num_slices-self.num_slices+1)]
-            self.sampling_weights += [(1.4) - (0.8)*i/(num_slices -self.num_slices)for i in range(num_slices -self.num_slices +1)]
+            self.sampling_weights += [(1.1) - (0.2)*i/(num_slices -self.num_slices)for i in range(num_slices -self.num_slices +1)]
             
     def _get_metadata(self, fname):
         with h5py.File(fname, "r") as hf:
