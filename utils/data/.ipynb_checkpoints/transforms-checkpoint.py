@@ -14,7 +14,8 @@ from utils.model.fastmri import fft2c, ifft2c, rss_complex, complex_abs
 
 from typing import List, Optional, Union
 
-from torchvision import transforms as T
+from torchvision import transforms as transforms
+from torchvision.transforms import functional as TF
 from utils.data.helper import *
 
 def to_tensor(data):
@@ -28,6 +29,40 @@ def to_tensor(data):
     """
     return torch.from_numpy(data)
 
+class MultiDataTransform2nd:
+    def __init__(self, isforward, max_key, edge = False, aug = False):
+        self.isforward = isforward
+        self.max_key = max_key
+        self.edge= edge 
+        self.aug = aug
+        
+        if self.aug : 
+        
+            self.augmentation = transforms.Compose(
+                [transforms.RandomHorizontalFlip(p=0.5), 
+                 transforms.RandomVerticalFlip(p= 0.5), 
+                 transforms.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            
+            # mixup augmentation
+    def __call__(self, recon_image, target_image, attrs, fname, num_slice) : 
+        
+        if not self.isforward: 
+            targets = to_tensor(target_image)
+            maximum = attrs[self.max_key]
+        else : 
+            targets = torch.Tensor([-1]*len(target_image))
+            maximum = torch.Tensor([-1]*len(target_image))
+
+        recons = to_tensor(recon_image) 
+        
+        if self.aug : 
+            brightness = random.uniform(1.0, 2.0)
+            targets = self.augmentation(targets * brightness) 
+            recons = self.augmentation(recons * brightness) 
+            maximum = maximum * brightness
+        return recons, targets, maximum, fname, num_slice, brightness
+        
+
 
 # Transform for training image domain network
 class DataTransform2nd:
@@ -38,11 +73,11 @@ class DataTransform2nd:
         self.aug = aug
         
         if self.aug : 
-        
-            self.augmentation = T.Compose(
-                [T.RandomHorizontalFlip(p=0.5), 
-                 T.RandomVerticalFlip(p= 0.5), 
-                 T.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
+            
+            self.augmentation = transforms.Compose(
+                [transforms.RandomHorizontalFlip(p=0.5), 
+                 transforms.RandomVerticalFlip(p= 0.5), 
+                 transforms.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
             
             # mixup augmentation
             
@@ -62,18 +97,18 @@ class DataTransform2nd:
         input_image = to_tensor(input_image).unsqueeze(0)  
         grappa_image = to_tensor(grappa_image).unsqueeze(0) 
         recon_image = to_tensor(recon_image).unsqueeze(0) 
-        brightness = 1
+        inputs = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        brightness = 1.0
         if self.aug : 
             brightness = random.uniform(1.0, 2.0)
-            input_image = self.augmentation(input_image * brightness) 
-            grappa_image = self.augmentation(grappa_image * brightness)
-            recon_image = self.augmentation(recon_image * brightness)
-            target = self.augmentation(target * brightness)
-            
-        input = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+            aug_input = torch.cat((input_image, recon_image, grappa_image, target), dim = 0)
+            aug_output = self.augmentation(aug_input * brightness)
+            inputs = aug_output[:3,...] 
+            target = aug_output[3,...]
         
         
-        return input, target, maximum, fname, slice, brightness
+        
+        return inputs, target, maximum, fname, slice, brightness
         
         # add augmentation code for input images
          
@@ -105,6 +140,7 @@ class DataTransform:
         masked_kspace = to_tensor(input * mask)
         origin_kspace = to_tensor(input)
         masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), dim=-1)
+        
         mask = torch.from_numpy(mask.reshape(1, 1, masked_kspace.shape[-2], 1).astype(np.float32)).byte()
 
         if self.edge:
@@ -129,6 +165,7 @@ class VarNetDataTransform:
                 generator seed from the filename. This ensures that the same
                 mask is used for all the slices of a given volume every time.
         """
+        print("use_varnet_transform")
 
         self.use_seed = use_seed
         if augmentor is not None:
@@ -174,27 +211,23 @@ class VarNetDataTransform:
         # Apply augmentations if needed
         if self.use_augment:
             if self.augmentor.schedule_p() > -0.0001:
+                
                 kspace, target = self.augmentor(kspace, target.shape)
 
-
-        ## paddingleft? paddingright?
-        seed = None if not self.use_seed else tuple(map(ord, fname))
-        # acq_start = attrs["padding_left"]
-        # acq_end = attrs["padding_right"]
-
-        
-        
-
-        mask_func = create_mask_for_mask_type(
-            mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(4, 8)]
-        )
-
-        masked_kspace, mask = apply_mask(
-            kspace, mask_func, seed, None
-        )
-
+        if np.random.rand() > 2:
+            # augment mask or not
+            seed = None if not self.use_seed else tuple(map(ord, fname))
+            mask_func = create_mask_for_mask_type(
+                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(5, 7)]
+            )
+            seed = None if not self.use_seed else tuple(map(ord, fname))
+            mask = mask_func(np.array(kspace.shape), seed)
+        else :
+            mask = np.roll(mask, random.randint(-2, 2), axis=0)
+            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
+        masked_kspace = kspace * mask + 0.0
         return (
-            mask.byte(),
+            mask.float(),
             masked_kspace,
             -1,
             target,
@@ -310,7 +343,6 @@ class AugmentationPipeline:
     def augment_image(self, im, max_output_size=None):
         # Trailing dims must be image height and width (for torchvision)
         im = complex_channel_first(im)
-
         # ---------------------------
         # pixel preserving transforms
         # ---------------------------
@@ -408,8 +440,14 @@ class AugmentationPipeline:
 
     def augment_from_kspace(self, kspace, target_size, max_train_size=None):
         im = ifft2c(kspace)
+        
+        # roll image to make brain center
+        # replace np.roll(np.roll(np.fft.ifft2(kspace), shift=h // 2, axis=1), shift=w // 2, axis=2) with tensor operations
+                
         im = self.augment_image(im, max_output_size=max_train_size)
+        # print(im.shape, target_size)
         target = self.im_to_target(im, target_size)
+         
         kspace = fft2c(im)
         return kspace, target
 
@@ -515,7 +553,8 @@ class DataAugmentor:
             p = 0.0
 
         # Augment if needed
-        if self.aug_on and p > -0.0001:
+        if self.aug_on and p > -0.00001:
+            # print("augmenting")
             kspace, target = self.augmentation_pipeline.augment_from_kspace(kspace,
                                                                             target_size=target_size,
                                                                             max_train_size=self.max_train_resolution)
@@ -560,19 +599,19 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_schedule',
             type=str,
-            default='exp',
+            default='ramp',
             help='Type of data augmentation strength scheduling. Options: constant, ramp, exp'
         )
         parser.add_argument(
             '--aug_delay',
             type=int,
-            default=0,
+            default=-0,
             help='Number of epochs at the beginning of training without data augmentation. The schedule in --aug_schedule will be adjusted so that at the last epoch the augmentation strength is --aug_strength.'
         )
         parser.add_argument(
             '--aug_strength',
             type=float,
-            default=0.55,
+            default=0.25,
             help='Augmentation strength, combined with --aug_schedule determines the augmentation strength in each epoch'
         )
         parser.add_argument(
@@ -640,7 +679,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_weight_rot90',
             type=float,
-            default=1.0,
+            default=0.0,
             help='Weight of probability of rotation by multiples of 90 degrees. Augmentation probability will be multiplied by this constant'
         )
         parser.add_argument(
@@ -652,7 +691,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_weight_flipv',
             type=float,
-            default=1.0,
+            default=0.0,
             help='Weight of vertical flip probability. Augmentation probability will be multiplied by this constant'
         )
 
@@ -662,19 +701,19 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_max_translation_x',
             type=float,
-            default=0.125,
+            default=0.1,
             help='Maximum translation applied along the x axis as fraction of image width'
         )
         parser.add_argument(
             '--aug_max_translation_y',
             type=float,
-            default=0.125,
+            default=0,
             help='Maximum translation applied along the y axis as fraction of image height'
         )
         parser.add_argument(
             '--aug_max_rotation',
             type=float,
-            default=180.,
+            default=20.0,
             help='Maximum rotation applied in either clockwise or counter-clockwise direction in degrees.'
         )
         parser.add_argument(
@@ -692,7 +731,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_max_scaling',
             type=float,
-            default=0.25,
+            default=0.1,
             help='Maximum scaling applied as fraction of image dimensions. If set to s, a scaling factor between 1.0-s and 1.0+s will be applied.'
         )
 

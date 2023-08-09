@@ -29,7 +29,7 @@ def parse() :
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
     parser.add_argument('-e', '--num-epochs', type=int, default=80, help='Number of epochs')
-    parser.add_argument('-l', '--lr', type=float, default=0.00005, help='Learning rate')
+    parser.add_argument('-l', '--lr', type=float, default=0.0005, help='Learning rate')
     parser.add_argument('--report-interval', type=int, default=100, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
     
@@ -39,7 +39,6 @@ def parse() :
     
     # grappa and reconstruction
     parser.add_argument("--mode", type=str, default="train", help="train or leaderboard or val",choices=["train", "leaderboard", "val"]) 
-    parser.add_argument('--grappa-path', type=Path, default='../../Data/grappa/', help='Directory of grappa data')
     parser.add_argument('--recon-path', type=Path, default='../result/varnet_16_aug_resume_from_epoch12/', help='Directory of recon data')
     
     
@@ -51,12 +50,14 @@ def parse() :
     parser.add_argument('--seed', type=int, default=2023, help='Fix random seed')
     
     parser.add_argument("--loss_mask", type= bool ,default = True)
-    parser.add_argument("--weight-decay", type=float, default=0.0001, help="Weight decay")
+    parser.add_argument("--weight-decay", type=float, default=0.00001, help="Weight decay")
     parser.add_argument("--num-workers", type= int, default = 4)
     parser.add_argument("--edge", type=bool, default=False)
     parser.add_argument("--aug", type=bool, default=True)
     
-    parser.add_argument("--grad_accumulation", type = int, default = 16)
+    parser.add_argument("--grad_accumulation", type = int, default = 8)
+    
+    parser.add_argument("--multi-channel", type = bool, default = False)
     args = parser.parse_args()
     
     return args 
@@ -64,7 +65,7 @@ def parse() :
 if __name__ == '__main__':
     args = parse()
     seed_fix(args.seed)
-    
+    print(args)
     
     # todo : if gpu-num == -1 then use cpu
 
@@ -75,7 +76,6 @@ if __name__ == '__main__':
 
     args.exp_dir.mkdir(parents=True, exist_ok=True)
     args.val_dir.mkdir(parents=True, exist_ok=True)
-
     wandb.init(project="fast-mri", config=vars(args))
     
     

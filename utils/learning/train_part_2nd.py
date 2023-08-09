@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import time
-
+import os 
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import save_reconstructions, ssim_loss
@@ -15,6 +15,8 @@ from utils.data.transforms import DataTransform2nd, MultiDataTransform2nd
 import pandas as pd 
 from tqdm import tqdm
 import wandb
+import matplotlib.pyplot as plt
+
 def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
     model.train()
     start_epoch = start_iter = time.perf_counter()
@@ -23,13 +25,11 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
 
     for iter, data in enumerate(tqdm(data_loader)):
         input, target, maximum, _, _, brightness = data
-        input = input.to(device=device, non_blocking=True)
+        input = input.cuda(non_blocking=True)
         input.requires_grad = True
-        target = target.to(device=device, non_blocking=True)
-        maximum = maximum.to(device=device, non_blocking=True)
-        brightness = brightness.to(device=device, non_blocking=True)
-
-        print(input.shape, target.shape, maximum.shape, brightness.shape)
+        target = target.cuda(non_blocking=True)
+        maximum = maximum.cuda(non_blocking=True)
+        brightness = brightness.cuda(non_blocking=True)
         output = model(input)
         
         output = output.squeeze(1)
@@ -39,6 +39,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
             output = (target > (2e-5 * brightness[:,None,None]))*output
             target = (target > (2e-5 * brightness[:,None,None])) * target
             
+#         print(output.shape, target.shape, maximum)
         loss = loss_type(output, target, maximum) / args.grad_accumulation 
         loss.backward()  
         if ((iter + 1) % args.grad_accumulation) == 0:  
@@ -90,9 +91,9 @@ def validate(args, model, data_loader, device):
                 targets[fnames[i]][int(slices[i])] = target[i].cpu().numpy()
                 inputs[fnames[i]][int(slices[i])] = input[i].cpu().numpy()
             
-            if ((iter % args.report_interval)== 0) : 
+            if (((iter+1) % args.report_interval)== 0) : 
                 print(f"{iter} validated")
-
+        
     for fname in reconstructions:
         reconstructions[fname] = np.stack(
             [out for _, out in sorted(reconstructions[fname].items())]
@@ -146,9 +147,10 @@ def train(args):
     print('Current cuda device: ', torch.cuda.current_device())
     
     # todo : add config file for better readability
-    model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=64, middle_blk_num=12, enc_blk_nums=[2, 2, 4, 8],
+    model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
                  dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
     
+    print(model)
     model.to(device=device)
     loss_type = SSIMLoss().to(device=device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay= args.weight_decay)
@@ -156,6 +158,7 @@ def train(args):
     best_val_loss = 1.
     start_epoch = 0
     
+
     
     if not args.multi_channel :
         train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
@@ -174,19 +177,19 @@ def train(args):
                                 transform=val_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key),
-                                    batch_size=args.batch_size,
+                                    batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)
     
     else :
-        train_transform = MultiSliceData2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug, num_slice = 3)
-        val_transform = MultiSliceData2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False, num_slice = 3)
+        train_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
+        val_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
 
         train_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_train, 
                                 args.recon_path / "reconstructions_train",
                                 transform=train_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
+                                target_key= args.target_key,num_slices = 3),
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
@@ -195,14 +198,14 @@ def train(args):
                                 args.recon_path / "reconstructions_val",
                                 transform=val_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
-                                    batch_size=args.batch_size,
+                                target_key= args.target_key,num_slices = 3),
+                                    batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)
     
     
     val_loss_log = np.empty((0, 2))
-#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
+    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')

@@ -10,7 +10,7 @@ import requests
 from tqdm import tqdm
 from pathlib import Path
 import copy
-
+import pandas as pd
 
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
@@ -21,6 +21,7 @@ from utils.model.EAMRI import EAMRI
 import os
 import torch.nn.functional as F
 
+from kornia.morphology import dilation, erosion 
 
 from logging import getLogger
 
@@ -37,7 +38,10 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
     ffl = FocalFrequencyLoss(loss_weight=1.0, alpha=1.0) 
     len_loader = len(data_loader)
     total_loss = 0.
-
+    
+    # for masking loss 
+    k = torch.ones(3,3).float().to(device)
+    
     for iter, data in enumerate(tqdm(data_loader)):
         mask, kspace, kspace_origin, target, edge, maximum, fname, _, = data
 #         print(mask.shape, kspace.shape, target.shape, maximum, torch.sum(mask > 0))
@@ -45,15 +49,33 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         kspace = kspace.to(device)
         target = target.to(device)
         maximum = maximum.to(device)
-        kspace_origin = kspace_origin.to(device)
+        # kspace_origin = kspace_origin.to(device)
+        kspace.requires_grad = True
+        mask.requires_grad = True
+        target.requires_grad = True
+        
+        
         output_image = model(kspace, mask)
         if args.loss_mask:
-            output_image, target = output_image*(target>3e-5).float(), target*(target>3e-5).float()
+            loss_mask  = (target > 2e-5).float().unsqueeze(0)
+            # for 1 time 
+            loss_mask  = erosion(loss_mask, k)
+            # for 15 times dilation 
+            for i in range(15):
+                loss_mask = dilation(loss_mask, k)
+            for i in range(14):
+                loss_mask = erosion(loss_mask, k)
+            
+            # erosion by 1 time, dilate for 15 times and erosion by 1 
+            loss_mask = loss_mask.float().squeeze(0)
+            output_image = output_image * loss_mask
+            target = target * loss_mask
+
         loss_ssim  = loss_type(output_image, target, maximum) 
-        loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
-        loss = loss_fft + loss_ssim 
-        if loss.item() > 0.04 :
-            print(f"loss {loss.item()} in {fname}")
+        # loss_fft = ffl(output_image.unsqueeze(0),target.unsqueeze(0))
+        loss =  loss_ssim 
+        # if loss.item() > 0.04 :
+        #     print(f"loss {loss.item()} in {fname}")
         loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
         loss.backward()
         
@@ -61,9 +83,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             if args.grad_norm > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
             optimizer.step()
-
-            if args.scheduler is not None:
-                scheduler.step()
+            
             optimizer.zero_grad()
 
         total_loss += loss.item() * args.grad_accumulation
@@ -95,7 +115,10 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
     reconstructions = defaultdict(dict)
     targets = defaultdict(dict)
     start = time.perf_counter()
-
+    k = torch.ones(3,3).float().to(device)
+    # maintain the csv file for ssim score
+    df = pd.DataFrame(columns = [i for i in range(0, 30)])
+    
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
             mask, kspace, _, target, edge, _, fnames, slices = data
@@ -105,7 +128,16 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
             output = model(kspace, mask)
             if args.loss_mask:
-                output, target = output*(target>3e-5).float(), target*(target>3e-5).float()
+                loss_mask  = (target > 2e-5).float().unsqueeze(0)
+            # for 1 time 
+                loss_mask  = erosion(loss_mask, k)
+                for i in range(15):
+                    loss_mask = dilation(loss_mask, k)
+                for i in range(14):
+                    loss_mask = erosion(loss_mask, k)
+                loss_mask = loss_mask.squeeze(0)
+                output= output * loss_mask
+                target = target * loss_mask 
             
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -118,7 +150,23 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
         reconstructions[fname] = np.stack([out for _, out in sorted(reconstructions[fname].items())])
     for fname in targets:
         targets[fname] = np.stack([out for _, out in sorted(targets[fname].items())])
-    metric_loss = sum([ssim_loss(targets[fname], reconstructions[fname]) for fname in reconstructions])
+    
+    # person mean -> slice mean -> ssim 
+    # key -> list of ssim scoreum
+    metric_loss = 0
+    num_total_slice = 0 
+    for fname in reconstructions.keys():
+        metric_losses = ssim_loss(targets[fname], reconstructions[fname])
+        metric_loss += np.sum(metric_losses)
+        num_total_slice += len(metric_losses) 
+        if len(metric_losses) < 30:
+            metric_losses = np.append(metric_losses, np.zeros(30 - len(metric_losses)))
+        
+        df.loc[fname]  = list(metric_losses) 
+    
+    metric_loss = metric_loss / num_total_slice
+    df.to_csv(os.path.join(args.val_loss_dir, "ssim_score_{}.csv".format(args.loss_mask)))
+    
     num_subjects = len(reconstructions)
     return metric_loss, num_subjects, reconstructions, targets, None, time.perf_counter() - start
 
@@ -199,15 +247,15 @@ def train(args):
     best_val_loss = 1.
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
-
-
+    
     train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
-    val_dataset, val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
-
+    _ , val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
+    
+    
 #     # test saving and validation
-    save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
-    print(val_loss.item())
+    # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
+    # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+    # print(val_loss)
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
@@ -217,6 +265,8 @@ def train(args):
         # train
         train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, scheduler, loss_type, device)
 
+        if args.scheduler is not None:
+            scheduler.step()
         # validate
         val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
 
@@ -224,8 +274,8 @@ def train(args):
         # cal loss to tensor
         train_loss = torch.tensor(train_loss).cuda(non_blocking=True)
         val_loss = torch.tensor(val_loss).cuda(non_blocking=True)
-        num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
-        val_loss = val_loss / num_subjects
+        # num_subjects = torch.tensor(num_subjects).cuda(non_blocking=True)
+        # val_loss = val_loss / num_subjects
         is_new_best = val_loss < best_val_loss
         best_val_loss = min(best_val_loss, val_loss)
         

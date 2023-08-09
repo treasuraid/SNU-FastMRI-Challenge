@@ -44,23 +44,23 @@ class MultiDataTransform2nd:
                  transforms.RandomAffine(degrees= 10, scale=(0.9, 1.1), shear= (-5,5,-5,5))])
             
             # mixup augmentation
-    def __call__(self, recon_image, target_image, attrs, fname, slice) : 
+    def __call__(self, recon_image, target_image, attrs, fname, num_slice) : 
         
         if not self.isforward: 
             targets = to_tensor(target_image)
-            maximum = torch.Tensor(attrs[self.max_key] * np.ones(len(target_image)))
+            maximum = attrs[self.max_key]
         else : 
             targets = torch.Tensor([-1]*len(target_image))
             maximum = torch.Tensor([-1]*len(target_image))
 
-        recons = to_tensor(recon_image)
+        recons = to_tensor(recon_image) 
         
         if self.aug : 
             brightness = random.uniform(1.0, 2.0)
-            recons = self.augmentation(recon_image * brightness) 
             targets = self.augmentation(targets * brightness) 
-            maximum = self.augmentation(maximum * brightness)  
-        return recons, targets, maximum, fname, slice, brightness
+            recons = self.augmentation(recons * brightness) 
+            maximum = maximum * brightness
+        return recons, targets, maximum, fname, num_slice, brightness
         
 
 
@@ -97,18 +97,18 @@ class DataTransform2nd:
         input_image = to_tensor(input_image).unsqueeze(0)  
         grappa_image = to_tensor(grappa_image).unsqueeze(0) 
         recon_image = to_tensor(recon_image).unsqueeze(0) 
-        brightness = 1
+        inputs = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        brightness = 1.0
         if self.aug : 
             brightness = random.uniform(1.0, 2.0)
-            input_image = self.augmentation(input_image * brightness) 
-            grappa_image = self.augmentation(grappa_image * brightness)
-            recon_image = self.augmentation(recon_image * brightness)
-            target = self.augmentation(target * brightness)
-            
-        input = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+            aug_input = torch.cat((input_image, recon_image, grappa_image, target), dim = 0)
+            aug_output = self.augmentation(aug_input * brightness)
+            inputs = aug_output[:3,...] 
+            target = aug_output[3,...]
         
         
-        return input, target, maximum, fname, slice, brightness
+        
+        return inputs, target, maximum, fname, slice, brightness
         
         # add augmentation code for input images
          

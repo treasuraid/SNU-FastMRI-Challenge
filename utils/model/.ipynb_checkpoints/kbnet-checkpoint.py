@@ -15,6 +15,7 @@ if os.getcwd() + '/utils/model/' not in sys.path:
     
 from kb_utils import KBAFunction
 from kb_utils import LayerNorm2d, SimpleGate
+from typing import List, Tuple
 
 
 class Downsample(nn.Module):
@@ -386,6 +387,8 @@ class KBNet_s(nn.Module):
     def __init__(self, img_channel=3, out_channel=1, width=64, middle_blk_num=12, enc_blk_nums=[2, 2, 4, 8],
                  dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=False, ffn_scale=2):
         super().__init__()
+        self.img_channel = img_channel
+        self.out_channel = out_channel
         basicblock = eval(basicblock)
 
         self.intro = nn.Conv2d(in_channels=img_channel, out_channels=width, kernel_size=3, padding=1, stride=1,
@@ -443,11 +446,28 @@ class KBNet_s(nn.Module):
     
     
         
-    def forward(self, inp):
-        B, C, H, W = inp.shape
+    def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # group norm
+        b, c, h, w = x.shape
+        x = x.view(b, c, h * w)
 
+        mean = x.mean(dim=2).view(b, c, 1, 1)
+        std = x.std(dim=2).view(b, c, 1, 1)
+        x = x.view(b,c,h,w)
+        return (x - mean) / std, mean, std
+
+    def unnorm(
+        self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+    ) -> torch.Tensor:
+        return x * std + mean
+
+    
+    def forward(self, inp_origin):
+#         B, C, H, W = inp.shape
+        inp, mean, std = self.norm(inp_origin)
+#         print(inp.shape, mean.shape, std.shape)
         inp = self.check_image_size(inp)
-        print(inp.shape)
+    
         x = checkpoint.checkpoint(self.custom(self.intro), inp)
         
         # x = self.intro(inp)
@@ -467,10 +487,10 @@ class KBNet_s(nn.Module):
             x = checkpoint.checkpoint(self.custom(decoder), x)
 
         x = checkpoint.checkpoint(self.custom(self.ending), x)
-#         x = x + inp
 
-        return x[:, :, :H, :W]
-
+        x = self.unnorm(x, mean[:,1:2,:,:], std[:,1:2,:,:]) + inp_origin[:,1:2,:,:]
+        return x 
+    
     def check_image_size(self, x):
         _, _, h, w = x.size()
         mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
@@ -499,12 +519,13 @@ if __name__ == "__main__" :
     print('Number of parameters in the model : ', num_params)
     
     # count number of parameters in the model
-    macs, params = profile(net, inputs = (torch.randn(1,3,384,384).to("cuda"),))
+    macs, params = profile(net, inputs = (torch.randn(1,3,256,256).to("cuda"),))
     
     
-    random_input = torch.randn(1,3,384,384).to("cuda")
-    random_input.requires_grad = True
-    out = net(random_input)
-             
-    out.sum().backward()
+    out = net(torch.randn(1,3,384,384).to("cuda"))
+    
+    # test backward          
+    
+              
+    loss.backward()
     print(macs, params)

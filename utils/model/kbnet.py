@@ -15,6 +15,7 @@ if os.getcwd() + '/utils/model/' not in sys.path:
     
 from kb_utils import KBAFunction
 from kb_utils import LayerNorm2d, SimpleGate
+from typing import List, Tuple
 
 
 class Downsample(nn.Module):
@@ -445,10 +446,28 @@ class KBNet_s(nn.Module):
     
     
         
-    def forward(self, inp):
-        B, C, H, W = inp.shape
+    def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # group norm
+        b, c, h, w = x.shape
+        x = x.view(b, c, h * w)
 
+        mean = x.mean(dim=2).view(b, c, 1, 1)
+        std = x.std(dim=2).view(b, c, 1, 1)
+        x = x.view(b,c,h,w)
+        return (x - mean) / std, mean, std
+
+    def unnorm(
+        self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+    ) -> torch.Tensor:
+        return x * std + mean
+
+    
+    def forward(self, inp_origin):
+#         B, C, H, W = inp.shape
+        inp, mean, std = self.norm(inp_origin)
+#         print(inp.shape, mean.shape, std.shape)
         inp = self.check_image_size(inp)
+    
         x = checkpoint.checkpoint(self.custom(self.intro), inp)
         
         # x = self.intro(inp)
@@ -469,7 +488,8 @@ class KBNet_s(nn.Module):
 
         x = checkpoint.checkpoint(self.custom(self.ending), x)
 
-        return x[:, :, :H, :W] + inp if self.img_channel == self.out_channel else x[:,:,:H,:W]# re turn the second channel, which is the output of the network
+        x = self.unnorm(x, mean[:,1:2,:,:], std[:,1:2,:,:]) + inp_origin[:,1:2,:,:]
+        return x 
     
     def check_image_size(self, x):
         _, _, h, w = x.size()

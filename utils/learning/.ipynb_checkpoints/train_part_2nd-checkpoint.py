@@ -3,18 +3,20 @@ import numpy as np
 import torch
 import torch.nn as nn
 import time
-
+import os 
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.unet import Unet
 from utils.model.kbnet import KBNet_l,  KBNet_s
-from utils.data.load_data import SliceData2nd 
-from utils.data.transforms import DataTransform2nd
-
+from utils.data.load_data import SliceData2nd, MultiSliceData2nd
+from utils.data.transforms import DataTransform2nd, MultiDataTransform2nd
+import pandas as pd 
 from tqdm import tqdm
 import wandb
+import matplotlib.pyplot as plt
+
 def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
     model.train()
     start_epoch = start_iter = time.perf_counter()
@@ -34,9 +36,10 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
         target = target.squeeze(1)
         
         if args.loss_mask : 
-            output = (target > (5e-5 * brightness[:,None,None]))*output
-            target = (target > (5e-5 * brightness[:,None,None])) * target
+            output = (target > (2e-5 * brightness[:,None,None]))*output
+            target = (target > (2e-5 * brightness[:,None,None])) * target
             
+#         print(output.shape, target.shape, maximum)
         loss = loss_type(output, target, maximum) / args.grad_accumulation 
         loss.backward()  
         if ((iter + 1) % args.grad_accumulation) == 0:  
@@ -67,9 +70,11 @@ def validate(args, model, data_loader, device):
     inputs = defaultdict(dict)
     start = time.perf_counter()
 
+    df = pd.DataFrame(columns = [i for i in range(0, 30)])
     with torch.no_grad():
         for iter, data in enumerate(tqdm(data_loader)):
             input, target, _, fnames, slices, brightness = data
+            
             input = input.cuda(non_blocking=True)
             output = model(input)
             brightness = brightness.cuda()
@@ -78,17 +83,17 @@ def validate(args, model, data_loader, device):
             output = output.squeeze(0)
             target = target.squeeze(0)
             if args.loss_mask : 
-                output = (target > (5e-5 * brightness[:,None,None]))*output
-                target = (target > (5e-5 * brightness[:,None,None])) * target
+                output = (target > (2e-5 * brightness[:,None,None]))*output
+                target = (target > (2e-5 * brightness[:,None,None])) * target
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
                 targets[fnames[i]][int(slices[i])] = target[i].cpu().numpy()
                 inputs[fnames[i]][int(slices[i])] = input[i].cpu().numpy()
             
-            if ((iter % args.report_interval)== 0) : 
+            if (((iter+1) % args.report_interval)== 0) : 
                 print(f"{iter} validated")
-
+        
     for fname in reconstructions:
         reconstructions[fname] = np.stack(
             [out for _, out in sorted(reconstructions[fname].items())]
@@ -101,7 +106,20 @@ def validate(args, model, data_loader, device):
         inputs[fname] = np.stack(
             [out for _, out in sorted(inputs[fname].items())]
         )
-        metric_loss = sum([ssim_loss(targets[fname], reconstructions[fname]) for fname in reconstructions])
+    metric_loss = 0
+    num_total_slice = 0 
+    for fname in reconstructions.keys():
+        metric_losses = ssim_loss(targets[fname], reconstructions[fname])
+        metric_loss += np.sum(metric_losses)
+        num_total_slice += len(metric_losses) 
+        if len(metric_losses) < 30:
+            metric_losses = np.append(metric_losses, np.zeros(30 - len(metric_losses)))
+        
+        df.loc[fname]  = list(metric_losses) 
+    
+    metric_loss = metric_loss / num_total_slice
+    df.to_csv(os.path.join(args.val_loss_dir, "ssim_score_{}.csv".format(args.loss_mask)))
+    
     num_subjects = len(reconstructions)
     return metric_loss, num_subjects, reconstructions, targets, inputs, time.perf_counter() - start
 
@@ -128,8 +146,11 @@ def train(args):
     torch.cuda.set_device(device)
     print('Current cuda device: ', torch.cuda.current_device())
     
-    model = KBNet_s(img_channel=3, out_channel=1, width=64, middle_blk_num=12, enc_blk_nums=[2, 2, 4, 8],
+    # todo : add config file for better readability
+    model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
                  dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
+    
+    print(model)
     model.to(device=device)
     loss_type = SSIMLoss().to(device=device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay= args.weight_decay)
@@ -137,12 +158,12 @@ def train(args):
     best_val_loss = 1.
     start_epoch = 0
     
+
     
-    train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
-    val_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
-    
-    train_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_train, 
-                                args.grappa_path / "train", 
+    if not args.multi_channel :
+        train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
+        val_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
+        train_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_train, 
                                 args.recon_path / "reconstructions_train",
                                 transform=train_transform,
                                 input_key = args.input_key,
@@ -151,18 +172,40 @@ def train(args):
                                     shuffle=True,
                                     num_workers=args.num_workers)
     
-    val_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_val, 
-                              args.grappa_path / "val", 
-                              args.recon_path / "reconstructions_val",
-                              transform=val_transform,
-                              input_key = args.input_key,
-                              target_key= args.target_key),
-                                batch_size=args.batch_size,
-                                shuffle=False,
-                                num_workers=args.num_workers,)
+        val_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_val,  
+                                args.recon_path / "reconstructions_val",
+                                transform=val_transform,
+                                input_key = args.input_key,
+                                target_key= args.target_key),
+                                    batch_size=1,
+                                    shuffle=False,
+                                    num_workers=args.num_workers,)
+    
+    else :
+        train_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
+        val_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
+
+        train_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_train, 
+                                args.recon_path / "reconstructions_train",
+                                transform=train_transform,
+                                input_key = args.input_key,
+                                target_key= args.target_key,num_slices = 3),
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    num_workers=args.num_workers)
+    
+        val_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_val,  
+                                args.recon_path / "reconstructions_val",
+                                transform=val_transform,
+                                input_key = args.input_key,
+                                target_key= args.target_key,num_slices = 3),
+                                    batch_size=1,
+                                    shuffle=False,
+                                    num_workers=args.num_workers,)
+    
     
     val_loss_log = np.empty((0, 2))
-#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
+    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
