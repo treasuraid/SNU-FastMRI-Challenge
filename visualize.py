@@ -7,6 +7,7 @@ import torch
 from train import parse
 
 from utils.data.load_data import create_data_loaders
+from pathlib import Path
 
 import h5py
 if __name__ == '__main__':
@@ -40,7 +41,7 @@ if __name__ == '__main__':
     
     import utils.model.fastmri as fastmri
     
-    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=True, aug=False)
+    train_dataset, train_loader = create_data_loaders(data_path=Path("/Data/val"), args=args, shuffle=True, aug=True)
     from tqdm import tqdm
     k = torch.ones(3,3).float()
     for iter, data in enumerate(tqdm(train_loader)):
@@ -52,6 +53,20 @@ if __name__ == '__main__':
         # crop to 384 x 384 
         result = result[..., result.shape[-2] //2 - 192 : result.shape[-2] //2 + 192, result.shape[-1] //2 - 192 : result.shape[-1] //2 + 192]
         
+        loss_mask  = (target > 5e-5).float().unsqueeze(0)
+            # for 1 time 
+        loss_mask  = erosion(loss_mask, k)
+        # for 15 times dilation 
+        for i in range(15):
+            loss_mask = dilation(loss_mask, k)
+        for i in range(14):
+            loss_mask = erosion(loss_mask, k)
+            
+            
+        
+
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) +  "_5mask.png"), loss_mask.squeeze(0).squeeze(0).numpy())
+        
         loss_mask  = (target > 2e-5).float().unsqueeze(0)
             # for 1 time 
         loss_mask  = erosion(loss_mask, k)
@@ -60,8 +75,11 @@ if __name__ == '__main__':
             loss_mask = dilation(loss_mask, k)
         for i in range(14):
             loss_mask = erosion(loss_mask, k)
+            
+        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) +  "_2mask.png"), loss_mask.squeeze(0).squeeze(0).numpy())
+        
         target = target.numpy()  
         plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) +  ".png"), target[0])
-        plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) +  "_mask.png"), loss_mask.squeeze(0).squeeze(0).numpy() * target[0])
+        
         
         plt.imsave(os.path.join("./garage1", fname[0][:-3] + "_" + str(slice.cpu().item()) + "_recon.png"), result[0])

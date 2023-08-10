@@ -214,17 +214,17 @@ class VarNetDataTransform:
                 
                 kspace, target = self.augmentor(kspace, target.shape)
 
-        if np.random.rand() > 2:
+        if np.random.rand() > 0.5:
             # augment mask or not
             seed = None if not self.use_seed else tuple(map(ord, fname))
             mask_func = create_mask_for_mask_type(
-                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(5, 7)]
+                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(4,6)]
             )
             seed = None if not self.use_seed else tuple(map(ord, fname))
-            mask = mask_func(np.array(kspace.shape), seed)
+            mask = mask_func(np.array(kspace.shape), seed).float()
         else :
             mask = np.roll(mask, random.randint(-2, 2), axis=0)
-            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).byte()
+            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).float()
         masked_kspace = kspace * mask + 0.0
         return (
             mask.float(),
@@ -551,7 +551,7 @@ class DataAugmentor:
             self.augmentation_pipeline.set_augmentation_strength(p)
         else:
             p = 0.0
-
+        print(p)
         # Augment if needed
         if self.aug_on and p > -0.00001:
             # print("augmenting")
@@ -599,19 +599,19 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_schedule',
             type=str,
-            default='ramp',
+            default='exp',
             help='Type of data augmentation strength scheduling. Options: constant, ramp, exp'
         )
         parser.add_argument(
             '--aug_delay',
             type=int,
-            default=-0,
+            default=17,
             help='Number of epochs at the beginning of training without data augmentation. The schedule in --aug_schedule will be adjusted so that at the last epoch the augmentation strength is --aug_strength.'
         )
         parser.add_argument(
             '--aug_strength',
             type=float,
-            default=0.25,
+            default=1.0,
             help='Augmentation strength, combined with --aug_schedule determines the augmentation strength in each epoch'
         )
         parser.add_argument(
@@ -691,7 +691,7 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_weight_flipv',
             type=float,
-            default=0.0,
+            default=1.0,
             help='Weight of vertical flip probability. Augmentation probability will be multiplied by this constant'
         )
 
@@ -701,37 +701,37 @@ class DataAugmentor:
         parser.add_argument(
             '--aug_max_translation_x',
             type=float,
-            default=0.1,
+            default=0.06,
             help='Maximum translation applied along the x axis as fraction of image width'
         )
         parser.add_argument(
             '--aug_max_translation_y',
             type=float,
-            default=0,
+            default=0.06,
             help='Maximum translation applied along the y axis as fraction of image height'
         )
         parser.add_argument(
             '--aug_max_rotation',
             type=float,
-            default=20.0,
+            default=10.0,
             help='Maximum rotation applied in either clockwise or counter-clockwise direction in degrees.'
         )
         parser.add_argument(
             '--aug_max_shearing_x',
             type=float,
-            default=15.0,
+            default=5.0,
             help='Maximum shearing applied in either positive or negative direction in degrees along x axis.'
         )
         parser.add_argument(
             '--aug_max_shearing_y',
             type=float,
-            default=15.0,
+            default=5.0,
             help='Maximum shearing applied in either positive or negative direction in degrees along y axis.'
         )
         parser.add_argument(
             '--aug_max_scaling',
             type=float,
-            default=0.1,
+            default=0.25,
             help='Maximum scaling applied as fraction of image dimensions. If set to s, a scaling factor between 1.0-s and 1.0+s will be applied.'
         )
 

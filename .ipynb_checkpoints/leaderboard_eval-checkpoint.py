@@ -57,6 +57,10 @@ def forward(args):
     if len(your_data) != 58:
         raise  NotImplementedError(f'Your Data Size Should Be 58 not {len(your_data)}')           
     
+    # ssim score regarding the slice number
+    
+    ssim_by_slice = np.zeros((58, 40))
+    
     ssim_total = 0
     idx = 0
     ssim_calculator = SSIM().to(device=device)
@@ -82,17 +86,23 @@ def forward(args):
                     mask = (torch.from_numpy(mask).to(device=device)).type(torch.float)
 
                     maximum = hf.attrs['max']
+#                     maximum = torch.max(target)
                     
                 with h5py.File(y_fname, "r") as hf:
                     recon = hf[args.output_key][i_slice]
                     recon = torch.from_numpy(recon).to(device=device)
-                    
+#                     recon = recon / torch.mean(recon) * torch.mean(target)
                 #ssim_total += ssim_calculator(recon, target, maximum).cpu().numpy()
-                ssim_total += ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
+                ssim_value =  ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
+                ssim_total += ssim_value
+                ssim_by_slice[i_subject, i_slice] = ssim_value
                 idx += 1
             
     print("Leaderboard Dataset SSIM : {:.4f}".format(ssim_total/idx))
 
+    # save ssim by slice to csv 
+    np.savetxt(os.path.join(args.your_data_path, "leaderboard_ssim_result.csv"), ssim_by_slice, delimiter=",")
+    
 
 if __name__ == '__main__':
     """

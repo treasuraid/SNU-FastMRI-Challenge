@@ -26,12 +26,12 @@ def parse():
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
-    parser.add_argument('-e', '--num-epochs', type=int, default=50, help='Number of epochs')
+    parser.add_argument('-e', '--num-epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('-l', '--lr', type=float, default=0.00005, help='Learning rate')
     parser.add_argument('-r', '--report-interval', type=int, default=100, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
-    parser.add_argument('-t', '--data-path-train', type=Path, default='/root/Data/train/', help='Directory of train data')
-    parser.add_argument('-v', '--data-path-val', type=Path, default='/root/Data/val/', help='Directory of validation data')
+    parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/train/', help='Directory of train data')
+    parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/val/', help='Directory of validation data')
     
     parser.add_argument('--cascade', type=int, default=12, help='Number of cascades | Should be less than 12') ## important hyperparameter
     parser.add_argument('--chans', type=int, default=18, help='Number of channels for cascade U-Net | 18 in original varnet') ## important hyperparameter
@@ -62,7 +62,7 @@ def parse():
 
     # scheduler
     parser.add_argument('--scheduler', type=str, default=None, choices = [None, "cosine", "step"], help='Scheduler to train')
-    parser.add_argument('--step_size', type=int, default=5, help='Step size for scheduler')
+    parser.add_argument('--step_size', type=int, default=10, help='Step size for scheduler')
     parser.add_argument('--gamma', type=float, default=0.5, help='Gamma for scheduler')
 
 
@@ -79,13 +79,15 @@ def parse():
 
     # augmentation aug delay max epochs aug strength
     # parser.add_argument("--aug_delay", type=int, default=0, help="Augmentation delay")
-    parser.add_argument("--max_epochs", type=int, default=50, help="Max epochs for augmentation")
+    parser.add_argument("--max_epochs", type=int, default=100, help="Max epochs for augmentation")
     # parser.add_argument("--aug_strength", type=float, default=0.5, help="Augmentation strength")
     # parser.add_argument("--aug_schedule", type=str, default="ramp", choices = ["constant", "ramp", "exponent"], help="Augmentation schedule")
 
+    parser.add_argument("--wrs", action= "store_true", default=False, help="Weighted random sampling") 
     DataAugmentor.add_augmentation_specific_args(parser)
 
 
+    
     args = parser.parse_args()
     # todo : argument to config file (yaml) for better readability
     return args

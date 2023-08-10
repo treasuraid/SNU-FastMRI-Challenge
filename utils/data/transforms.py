@@ -551,7 +551,7 @@ class DataAugmentor:
             self.augmentation_pipeline.set_augmentation_strength(p)
         else:
             p = 0.0
-
+        print(p)
         # Augment if needed
         if self.aug_on and p > -0.00001:
             # print("augmenting")

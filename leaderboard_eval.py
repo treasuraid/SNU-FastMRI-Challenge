@@ -86,11 +86,12 @@ def forward(args):
                     mask = (torch.from_numpy(mask).to(device=device)).type(torch.float)
 
                     maximum = hf.attrs['max']
+#                     maximum = torch.max(target)
                     
                 with h5py.File(y_fname, "r") as hf:
                     recon = hf[args.output_key][i_slice]
                     recon = torch.from_numpy(recon).to(device=device)
-                    
+#                     recon = recon / torch.mean(recon) * torch.mean(target)
                 #ssim_total += ssim_calculator(recon, target, maximum).cpu().numpy()
                 ssim_value =  ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
                 ssim_total += ssim_value
