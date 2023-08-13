@@ -12,7 +12,12 @@ import numpy as np
 import torch.fft
 from pytorch_msssim import ms_ssim
 
-MS_SSIM = ms_ssim 
+def MS_SSIM(x, y, data_range = None) :
+    
+    x = x.unsqueeze(0)
+    y = y.unsqueeze(0)
+#     print(data_range)
+    return 1- ms_ssim(x,y, data_range = data_range)
 
 class EdgeMAELoss(nn.Module):
     """

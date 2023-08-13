@@ -8,8 +8,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
-
+import numpy as np
 import torch.fft
+from pytorch_msssim import ms_ssim
+
+def MS_SSIM(x, y, data_range = None) :
+    
+    x = x.unsqueeze(0)
+    y = y.unsqueeze(0)
+#     print(data_range)
+    return 1- ms_ssim(x,y, data_range = data_range)
 
 class EdgeMAELoss(nn.Module):
     """
@@ -196,3 +204,130 @@ class FocalFrequencyLoss(nn.Module):
 
         # calculate focal frequency loss
         return self.loss_formulation(pred_freq, target_freq, matrix) * self.loss_weight
+
+
+class PSNRLoss(nn.Module):
+
+    def __init__(self, loss_weight=1.0, reduction='mean', toY=False):
+        super(PSNRLoss, self).__init__()
+        assert reduction == 'mean'
+        self.loss_weight = loss_weight
+        self.scale = 10 / np.log(10)
+        self.toY = toY
+        self.coef = torch.tensor([65.481, 128.553, 24.966]).reshape(1, 3, 1, 1)
+        self.first = True
+
+    def forward(self, pred, target):
+        assert len(pred.size()) == 4
+        if self.toY:
+            if self.first:
+                self.coef = self.coef.to(pred.device)
+                self.first = False
+
+            pred = (pred * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.
+            target = (target * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.
+
+            pred, target = pred / 255., target / 255.
+            pass
+        assert len(pred.size()) == 4
+
+        return self.loss_weight * self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+
+
+class MS_SSIM_L1_LOSS(nn.Module):
+    # Have to use cuda, otherwise the speed is too slow.
+    def __init__(self, gaussian_sigmas=[0.5, 1.0, 2.0, 4.0, 8.0],
+                 data_range = 1.0,
+                 K=(0.01, 0.03),
+                 alpha=0.025,
+                 compensation=200.0,
+                 cuda_dev=0,):
+        super(MS_SSIM_L1_LOSS, self).__init__()
+        self.DR = data_range
+        self.C1 = (K[0] * data_range) ** 2
+        self.C2 = (K[1] * data_range) ** 2
+        self.pad = int(2 * gaussian_sigmas[-1])
+        self.alpha = alpha
+        self.compensation=compensation
+        filter_size = int(4 * gaussian_sigmas[-1] + 1)
+        g_masks = torch.zeros((3*len(gaussian_sigmas), 1, filter_size, filter_size))
+        for idx, sigma in enumerate(gaussian_sigmas):
+            # r0,g0,b0,r1,g1,b1,...,rM,gM,bM
+            g_masks[3*idx+0, 0, :, :] = self._fspecial_gauss_2d(filter_size, sigma)
+            g_masks[3*idx+1, 0, :, :] = self._fspecial_gauss_2d(filter_size, sigma)
+            g_masks[3*idx+2, 0, :, :] = self._fspecial_gauss_2d(filter_size, sigma)
+        self.g_masks = g_masks.cuda(cuda_dev)
+
+    def _fspecial_gauss_1d(self, size, sigma):
+        """Create 1-D gauss kernel
+        Args:
+            size (int): the size of gauss kernel
+            sigma (float): sigma of normal distribution
+
+        Returns:
+            torch.Tensor: 1D kernel (size)
+        """
+        coords = torch.arange(size).to(dtype=torch.float)
+        coords -= size // 2
+        g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+        g /= g.sum()
+        return g.reshape(-1)
+
+    def _fspecial_gauss_2d(self, size, sigma):
+        """Create 2-D gauss kernel
+        Args:
+            size (int): the size of gauss kernel
+            sigma (float): sigma of normal distribution
+
+        Returns:
+            torch.Tensor: 2D kernel (size x size)
+        """
+        gaussian_vec = self._fspecial_gauss_1d(size, sigma)
+        return torch.outer(gaussian_vec, gaussian_vec)
+
+    def forward(self, x, y):
+        b, c, h, w = x.shape
+        mux = F.conv2d(x, self.g_masks, groups=3, padding=self.pad)
+        muy = F.conv2d(y, self.g_masks, groups=3, padding=self.pad)
+
+        mux2 = mux * mux
+        muy2 = muy * muy
+        muxy = mux * muy
+
+        sigmax2 = F.conv2d(x * x, self.g_masks, groups=3, padding=self.pad) - mux2
+        sigmay2 = F.conv2d(y * y, self.g_masks, groups=3, padding=self.pad) - muy2
+        sigmaxy = F.conv2d(x * y, self.g_masks, groups=3, padding=self.pad) - muxy
+
+        # l(j), cs(j) in MS-SSIM
+        print(mux2.shape, muy2.shape, muxy.shape, sigmax2.shape, sigmay2.shape, sigmaxy.shape)
+        l  = (2 * muxy    + self.C1) / (mux2    + muy2    + self.C1)  # [B, 15, H, W]
+        cs = (2 * sigmaxy + self.C2) / (sigmax2 + sigmay2 + self.C2)
+
+        lM = l[:, -1, :, :] * l[:, -2, :, :] * l[:, -3, :, :]
+        PIcs = cs.prod(dim=1)
+
+        loss_ms_ssim = 1 - lM*PIcs  # [B, H, W]
+
+        loss_l1 = F.l1_loss(x, y, reduction='none')  # [B, 3, H, W]
+        # average l1 loss in 3 channels
+        gaussian_l1 = F.conv2d(loss_l1, self.g_masks.narrow(dim=0, start=-3, length=3),
+                               groups=3, padding=self.pad).mean(1)  # [B, H, W]
+
+        loss_mix = self.alpha * loss_ms_ssim + (1 - self.alpha) * gaussian_l1 / self.DR
+        loss_mix = self.compensation*loss_mix
+
+        return loss_mix.mean()
+    
+if __name__ == "__main__" : 
+    
+    from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
+
+    loss = MS_SSIM_L1_LOSS()
+    
+    # ms_ssim_module = MS_SSIM(data_range=1, size_average=True, channel=1)
+    
+    func = ms_ssim 
+    x = torch.rand(3, 1, 256, 256) 
+    y = torch.rand(3, 1, 256, 256) 
+    print(y.view(3, -1).max(dim = 1).values)
+    print(1 - func(x,y, data_range = 1))
