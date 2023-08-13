@@ -10,6 +10,7 @@ from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.unet import Unet
 from utils.model.kbnet import KBNet_l,  KBNet_s
+from utils.model.NAFNet_arch import NAFNet
 from utils.data.load_data import SliceData2nd, MultiSliceData2nd
 from utils.data.transforms import DataTransform2nd, MultiDataTransform2nd
 import pandas as pd 
@@ -41,14 +42,14 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
         target = target.squeeze(1)
         
         if args.loss_mask : 
-            output = (target > (2e-5 * brightness[:,None,None]))*output
-            target = (target > (2e-5 * brightness[:,None,None])) * target
+            output = (target > (5e-5 * brightness[:,None,None]))*output
+            target = (target > (5e-5 * brightness[:,None,None])) * target
             
 #         print(output.shape, target.shape, maximum)
         loss = loss_type(output, target, maximum) / args.grad_accumulation 
         loss.backward()  
         if args.loss_mask : 
-                loss_mask  = (target > 2e-5).float().unsqueeze(0)
+                loss_mask  = (target > 5e-5).float().unsqueeze(0)
                 # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
@@ -96,7 +97,7 @@ def validate(args, model, data_loader, device):
             output = output.squeeze(0)
             target = target.squeeze(0)
             if args.loss_mask : 
-                loss_mask  = (target > 2e-5).float().unsqueeze(0)
+                loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
@@ -168,8 +169,22 @@ def train(args):
     print('Current cuda device: ', torch.cuda.current_device())
     
     # todo : add config file for better readability
-    model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
-                 dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
+    
+    if args.model == "kbnet":
+        model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
+                    dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
+    
+    elif args.model == "nafnet":
+        
+        width = 32
+        enc_blks = [2, 2, 4, 8]
+        middle_blk_num = 12
+        dec_blks = [2, 2, 2, 2]
+
+
+        modlel = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
+                      enc_blk_nums=enc_blks, dec_blk_nums=dec_blks)
+
     
     print(model)
     model.to(device=device)

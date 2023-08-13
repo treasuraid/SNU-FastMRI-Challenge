@@ -15,7 +15,7 @@ import pandas as pd
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import *
-from utils.common.loss_function import SSIMLoss, EdgeMAELoss, FocalFrequencyLoss
+from utils.common.loss_function import SSIMLoss, EdgeMAELoss, FocalFrequencyLoss, MS_SSIM 
 from utils.model.varnet import VarNet, VarnetAdded
 from utils.model.EAMRI import EAMRI
 import os
@@ -57,7 +57,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         
         output_image = model(kspace, mask)
         if args.loss_mask:
-            loss_mask  = (target > 2e-5).float().unsqueeze(0)
+            loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
             loss_mask  = erosion(loss_mask, k)
             # for 15 times dilation 
@@ -71,9 +71,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             output_image = output_image * loss_mask
             target = target * loss_mask
 
-        loss_ssim  = loss_type(output_image, target, maximum) 
-        loss_fft = torch.nn.functional.l1_loss(output_image, target) * 5000
-        loss =  loss_ssim + loss_fft
+        loss   = loss_type(output_image, target, maximum) 
+        # loss_fft = torch.nn.functional.l1_loss(output_image, target) * 5000
         # if loss.item() > 0.04 :
         #     print(f"loss {loss.item()} in {fname}")
         loss = loss / args.grad_accumulation # Normalize our loss (if averaged) by grad_accumulation
@@ -88,9 +87,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
 
         total_loss += loss.item() * args.grad_accumulation
         wandb.log({"train_batch_loss" : loss.item() * args.grad_accumulation,
-                   "learning_rate" : optimizer.param_groups[0]['lr'],
-                  "train_ssim_loss": loss_ssim.item(),
-                  "train_ffl_loss": loss_fft.item()})
+                   "learning_rate" : optimizer.param_groups[0]['lr']})
 
         if (iter % args.report_interval) == 0:
             logger.info(
@@ -129,7 +126,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
             output = model(kspace, mask)
             if args.loss_mask:
-                loss_mask  = (target > 2e-5).float().unsqueeze(0)
+                loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
@@ -242,6 +239,8 @@ def train(args):
         loss_type = torch.nn.MSELoss().to(device=device)
     elif args.loss == "edge":
         loss_type = EdgeMAELoss().to(device=device)
+    elif args.loss == "ms-ssim":
+        loss_type = MS_SSIM
     else:
         raise NotImplementedError("loss not found")
 

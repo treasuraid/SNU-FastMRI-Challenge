@@ -58,6 +58,10 @@ def parse() :
     parser.add_argument("--grad_accumulation", type = int, default = 8)
     
     parser.add_argument("--multi-channel", type = bool, default = False)
+    
+    parser.add_argument("--input_channel", type = int, default = 3) # original, grappa, recon from e2evarnet
+    
+    parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet"]) 
     args = parser.parse_args()
     
     return args 

@@ -67,7 +67,7 @@ def parse():
 
 
     # loss
-    parser.add_argument('--loss', type=str, default='ssim', choices = ["mse", "ssim", "edge"], help='Loss to train')
+    parser.add_argument('--loss', type=str, default='ssim', choices = ["mse", "ssim", "edge", "ms-ssim"], help='Loss to train')
     parser.add_argument("--edge_weight", type=float, default=1, help="Weight for edge loss") # 1 in original EAMRI paper
 
     # data
