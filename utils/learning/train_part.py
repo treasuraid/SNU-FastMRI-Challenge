@@ -58,6 +58,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         
         
         output_image = model(kspace, mask)
+        
+        if args.model == "eamri": 
+            output_edges, output_image = output_image[0], output_image[1]
         if args.loss_mask:
             loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
@@ -72,8 +75,18 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
             loss_mask = loss_mask.float().squeeze(0)
             output_image = output_image * loss_mask
             target = target * loss_mask
+            
+            if args.model == "eamri":
+                output_edges = output_edges * loss_mask
+                edge = edge * loss_mask 
 
-        loss   = loss_type(output_image, target, maximum) 
+        if args.moel == "eamri":
+            print("output_image", output_image.shape)
+            loss = loss_type((output_edges, output_image), (target, edge), maximum)
+            loss_ssim = SSIMLoss()(output_image, target, maximum)
+            wandb.log({"train_ssim_loss" : loss_ssim.item()})
+        else :
+            loss  = loss_type(output_image, target, maximum) 
         # loss_fft = torch.nn.functional.l1_loss(output_image, target) * 5000
         # if loss.item() > 0.04 :
         #     print(f"loss {loss.item()} in {fname}")
@@ -126,7 +139,10 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
             kspace = kspace.to(device)
             target = target.to(device)
 
-            output = model(kspace, mask)
+            if args.model == "eamri":
+                edge_output, output = model(kspace, mask) 
+            else :
+                output = model(kspace, mask)
             if args.loss_mask:
                 loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 

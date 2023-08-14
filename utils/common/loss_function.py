@@ -42,6 +42,7 @@ class EdgeMAELoss(nn.Module):
         for i in range(edge_preds.shape[0]):
             sum_edge_error += self.mse_loss(edge_preds[i], edge_target)
 
+        sum_edge_error /= edge_preds.shape[0]
         mse_pred_loss = self.mse_loss(pred, target)
         return sum_edge_error * self.edge_weight + mse_pred_loss
 

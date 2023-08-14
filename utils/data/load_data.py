@@ -13,6 +13,7 @@ class SliceData2nd(Dataset):
     def __init__(self, input_root, recon_root, transform, input_key, 
                  target_key, forward=False, edge=False):
         self.transform = transform
+        print(input_key)
         self.input_key = input_key
         self.target_key = target_key 
         self.forward = forward 

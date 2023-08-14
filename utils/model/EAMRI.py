@@ -12,7 +12,7 @@ from torch import nn
 import transforms_simple_eamri as T
 from eamri_networkutil import dilatedConvBlock, DC_multicoil, rearrange, LayerNorm, SensitivityModel, default_conv
 from torch.utils.checkpoint import checkpoint
-
+import fastmri
 
 class rdn_convBlock(nn.Module):
     def __init__(self, convNum=3, recursiveTime=3, inChannel=2, midChannel=16, shift=False):
@@ -292,8 +292,9 @@ class EAMRI(nn.Module):
         :param mask: (B, 1, 1, W, 1)
         """
         # data consistency
-        x1 = T.ifft2(masked_kspace)  # (B, coils, H, W, 2)      # zero-filled image (B, coils, H, W, 2)
+        x1 = fastmri.ifft2c(masked_kspace)  # (B, coils, H, W, 2)      # zero-filled image (B, coils, H, W, 2)
           # (B, 1, H, W, 1)
+        print(x1.shape)
         # stack mask to be (B, 1, H, W, 1)
         m = mask.repeat(1, 1, x1.shape[-3], 1, 1)  # (B, 1, H, W, 1)
 
@@ -322,13 +323,14 @@ class EAMRI(nn.Module):
         e5 = checkpoint(self.custom(self.edgeNet), x1)
         result = checkpoint(self.custom(self.fuse4), x2, e5, masked_kspace, m, sens_map)
 
+        # inverse fourier transform
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(result)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
+        
         height = result.shape[-2]
         width = result.shape[-1]
-        
+                
         result = result[..., (height - 384) // 2: 384 + (height - 384) // 2,
                  (width - 384) // 2: 384 + (width - 384) // 2]  # (B, 2, 384, 384)
-
-        result = (result ** 2).sum(dim=1).sqrt().unsqueeze(dim = 1) # (B, H, W)
 
         return torch.stack([e2,e3,e4,e5], dim = 0)[..., (height - 384) // 2: 384 + (height - 384) // 2,
                  (width - 384) // 2: 384 + (width - 384) // 2], result

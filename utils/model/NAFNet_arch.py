@@ -177,7 +177,7 @@ class NAFNet(nn.Module):
         mean = x.mean(dim=2).view(b, c, 1, 1)
         std = x.std(dim=2).view(b, c, 1, 1)
         x = x.view(b,c,h,w)
-        return (x - mean) / std, mean, std
+        return (x - mean) / std, mean, std # normal distribution
 
     def unnorm(
         self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
