@@ -34,22 +34,19 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
         input = input.cuda(non_blocking=True)
         input.requires_grad = True
         target = target.cuda(non_blocking=True)
-        maximum = maximum.cuda(non_blocking=True)
+#         maximum = maximum.cuda(non_blocking=True)
+        maximum = target.view(target.shape[0], -1).max(dim = 1).values
+#         print(maximum)
         brightness = brightness.cuda(non_blocking=True)
         output = model(input)
         
-        output = output.squeeze(1)
-        target = target.squeeze(1)
-        
+
+#         output = output.squeeze(1)
+        target = target.unsqueeze(1)
+#         print(target.shape, input.shape, output.shape)
         if args.loss_mask : 
-            output = (target > (5e-5 * brightness[:,None,None]))*output
-            target = (target > (5e-5 * brightness[:,None,None])) * target
-            
-#         print(output.shape, target.shape, maximum)
-        loss = loss_type(output, target, maximum) / args.grad_accumulation 
-        loss.backward()  
-        if args.loss_mask : 
-                loss_mask  = (target > 5e-5).float().unsqueeze(0)
+#                 print(brightness[:,None,None,None].shape)
+                loss_mask  = (target > (5e-5 * brightness[:,None,None,None])).float()
                 # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
@@ -59,11 +56,31 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
                 loss_mask = loss_mask.squeeze(0)
                 output= output * loss_mask
                 target = target * loss_mask 
-            
+          
+        loss = loss_type(output, target, maximum) / args.grad_accumulation 
+        loss.backward()  
+        
+#         plt.imsave(os.path.join("./garage1", str(iter) +"_" +"output.png"), output[0].cpu().detach().numpy())
+#         plt.imsave(os.path.join("./garage1", str(iter) +"_" +"recon.png"), input[0,1,:,:].cpu().detach().numpy())
+
+#         plt.imsave(os.path.join("./garage1", str(iter)) +"_" +"grappa.png", input[0,2,:,:].cpu().detach().numpy())
+
+#         plt.imsave(os.path.join("./garage1", str(iter)) +"_" +"diff.png", np.abs(target[0].cpu().numpy() -input[0,1,:,:].cpu().detach().numpy()))
+        
+#         plt.imsave(os.path.join("./garage1", str(iter)) +"_" +"diff_grappa.png", np.abs(target[0].cpu().numpy() -input[0,2,:,:].cpu().detach().numpy()))
+        
+        
         total_loss += loss.item() * args.grad_accumulation 
 
         wandb.log({"batch_loss": loss.item() * args.grad_accumulation})
         
+        if (((iter + 1) % args.grad_accumulation) == 0):
+            if args.grad_norm > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
+            optimizer.step()
+            
+            optimizer.zero_grad()
+            
         if iter % args.report_interval == 0:
             print(
                 f'Epoch = [{epoch:3d}/{args.num_epochs:3d}] '
@@ -92,12 +109,10 @@ def validate(args, model, data_loader, device):
             input = input.cuda(non_blocking=True)
             output = model(input)
             brightness = brightness.cuda()
-
             target = target.to(device)
-            output = output.squeeze(0)
-            target = target.squeeze(0)
+            
             if args.loss_mask : 
-                loss_mask  = (target > 5e-5).float().unsqueeze(0)
+                loss_mask  = (target > 5e-5 * brightness[:,None,None,None]).float()
             # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
                 for i in range(15):
@@ -107,7 +122,9 @@ def validate(args, model, data_loader, device):
                 loss_mask = loss_mask.squeeze(0)
                 output= output * loss_mask
                 target = target * loss_mask 
-
+            
+            target = target.squeeze(0)
+            output = output.squeeze(0)
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
                 targets[fnames[i]][int(slices[i])] = target[i].cpu().numpy()
@@ -115,7 +132,7 @@ def validate(args, model, data_loader, device):
             
             if (((iter+1) % args.report_interval)== 0) : 
                 print(f"{iter} validated")
-        
+
     for fname in reconstructions:
         reconstructions[fname] = np.stack(
             [out for _, out in sorted(reconstructions[fname].items())]
@@ -171,7 +188,7 @@ def train(args):
     # todo : add config file for better readability
     
     if args.model == "kbnet":
-        model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
+        model = KBNet_s(img_channel=args.input_channel, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
                     dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
     
     elif args.model == "nafnet":
@@ -180,9 +197,7 @@ def train(args):
         enc_blks = [2, 2, 4, 8]
         middle_blk_num = 12
         dec_blks = [2, 2, 2, 2]
-
-
-        modlel = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
+        model = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
                       enc_blk_nums=enc_blks, dec_blk_nums=dec_blks)
 
     
@@ -241,7 +256,7 @@ def train(args):
     
     
     val_loss_log = np.empty((0, 2))
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
+#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')

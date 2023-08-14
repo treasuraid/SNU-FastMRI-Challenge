@@ -28,13 +28,13 @@ def parse() :
     
     parser.add_argument('-g', '--GPU-NUM', type=int, default=0, help='GPU number to allocate')
     parser.add_argument('-b', '--batch-size', type=int, default=1, help='Batch size')
-    parser.add_argument('-e', '--num-epochs', type=int, default=80, help='Number of epochs')
+    parser.add_argument('-e', '--num-epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('-l', '--lr', type=float, default=0.0005, help='Learning rate')
     parser.add_argument('--report-interval', type=int, default=100, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
     
-    parser.add_argument('-t', '--data-path-train', type=Path, default='../../Data/train/image', help='Directory of train data')
-    parser.add_argument('-v', '--data-path-val', type=Path, default='../../Data/val/image', help='Directory of validation data')
+    parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/train/image', help='Directory of train data')
+    parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/val/image', help='Directory of validation data')
  
     
     # grappa and reconstruction
@@ -55,9 +55,14 @@ def parse() :
     parser.add_argument("--edge", type=bool, default=False)
     parser.add_argument("--aug", type=bool, default=True)
     
-    parser.add_argument("--grad_accumulation", type = int, default = 8)
-    
+    parser.add_argument("--grad_accumulation", type = int, default = 1)
+    parser.add_argument('--grad_norm', type=float, default=0.01, help='Gradient clipping')
+
     parser.add_argument("--multi-channel", type = bool, default = False)
+    
+    parser.add_argument("--input_channel", type = int, default = 3) # original, grappa, recon from e2evarnet
+    
+    parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet"]) 
     args = parser.parse_args()
     
     return args 

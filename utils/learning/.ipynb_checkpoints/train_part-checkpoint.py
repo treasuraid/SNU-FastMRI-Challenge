@@ -50,7 +50,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         target = target.to(device)
         # use gt.max 
 #         maximum = maximum.to(device) 
-        maximum = target.max() 
+        maximum = target.max().values
         # kspace_origin = kspace_origin.to(device)
         kspace.requires_grad = True
         # mask.requires_grad = True

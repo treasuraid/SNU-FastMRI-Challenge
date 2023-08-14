@@ -69,8 +69,10 @@ class SSIMLoss(nn.Module):
 
     def forward(self, X, Y, data_range):
     
-        X = X.unsqueeze(1)
-        Y = Y.unsqueeze(1)
+        if len(X.shape) == 3 :
+            X = X.unsqueeze(1)
+            Y = Y.unsqueeze(1)
+        
         data_range = data_range[:, None, None, None]
         C1 = (self.k1 * data_range) ** 2
         C2 = (self.k2 * data_range) ** 2
