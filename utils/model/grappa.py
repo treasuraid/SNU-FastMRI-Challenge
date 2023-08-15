@@ -3,11 +3,9 @@ from pygrappa import grappa
 import numpy as np
 import pygrappa
 
-def iff2c(kspace) :
-    h, w = kspace.shape[-2:]
-    return np.roll(np.roll(np.fft.ifft2(kspace), shift=h // 2, axis=1),
-                   shift=w // 2, axis=2)
-
+from fastmri import ifft2c
+import fastmri
+import torch 
 
 
 def grappa_recon(kspace: np.ndarray, mask: np.ndarray):
@@ -24,12 +22,11 @@ def grappa_recon(kspace: np.ndarray, mask: np.ndarray):
     right = np.argmin(squeezed_mask[cent:], axis=0)
     num_low_freqs = min(left, right)
     calib = kspace[:, :, cent - num_low_freqs:cent + num_low_freqs].copy()
-    grappa_result = grappa(kspace, calib, kernel_size=(3, 3), coil_axis=0)
-    grappa_result = iff2c(grappa_result)
-
-    # crop to [384, 384]
-    grappa_result = np.sqrt(np.sum(np.abs(grappa_result)**2, axis=0))
-    return grappa_result[..., h//2-192:h//2+192, w//2-192:w//2+192]
+    grappa_result = grappa(kspace, calib, kernel_size=(7, 7), coil_axis=0)
+    
+    grappa_result = torch.from_numpy(np.stack((grappa_result.real, grappa_result.imag), axis = -1))
+    grappa_result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(grappa_result)), dim=0)     
+    return grappa_result[..., h//2-192:h//2+192, w//2-192:w//2+192].numpy()
     
 
 if __name__ == '__main__':
@@ -40,9 +37,9 @@ if __name__ == '__main__':
     from tqdm import tqdm
     import matplotlib.pyplot as plt 
     # 3 times 반복
-    data_dir = "../../../../Data/train/kspace" 
-    grappa_dir = "../../../../Data/grappa/val/" 
-    
+    data_dir = "../../../../Data/leaderboard/acc4/kspace" 
+    grappa_dir = "../../../../Data/grappa/leaderboard/acc4" 
+    # original_dir = "../../../../Data/val/image"
     
     for fname in tqdm(os.listdir(data_dir)) :
         
@@ -60,8 +57,10 @@ if __name__ == '__main__':
                 kspace_slice = image_masked[slice]
                 grappa_recon_image = grappa_recon(kspace_slice*mask, mask)
                 original_image = grappa_recon(kspace_slice, mask)
-                print(grappa_recon_image.shape, np.max(grappa_recon_image), np.min(grappa_recon_image))
-                print(original_image.shape, np.max(original_image), np.min(original_image))
+
+#                 plt.imsave(fname + "_" + str(slice) + "_7.png",grappa_recon_image)
+#                 plt.imsave(fname + "_" + str(slice) + "_origin.png",original_image)
+
                 grappa_recon_images.append(grappa_recon_image)
                 
             grappa_recon_images = np.array(grappa_recon_images)

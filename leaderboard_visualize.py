@@ -41,7 +41,7 @@ def forward(args):
 
 #             plt.imsave(os.path.join("./garage1", 'brain_test' + str(i_subject + 1) + "_" + str(i_slice) +"_" +"recon.png"), recon*mask)
  
-            plt.imsave(os.path.join("./garage1", 'brain_test' + str(i_subject + 1) + "_" + str(i_slice) +"_" +"diff_non_abs.png"), (recon-target)*mask)
+            plt.imsave(os.path.join("./garage1", 'brain_test' + str(i_subject + 1) + "_" + str(i_slice) +"_" +"diff_non_abs.png"), np.abs((recon-target)*mask))
 
             idx += 1
 
