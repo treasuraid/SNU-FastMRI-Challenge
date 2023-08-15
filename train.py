@@ -51,7 +51,8 @@ def parse():
     # model
     parser.add_argument('--model', type=str, default='varnet', choices = ["varnet", "eamri", "mdnet"], help='Model to train')
 
-
+    
+    parser.add_argument("--mode", type=str, default = None)
     # gradient
     parser.add_argument('--grad_accumulation', type=int, default=4, help='Gradient accumulation')
     parser.add_argument('--grad_norm', type=float, default=1e8, help='Gradient clipping')

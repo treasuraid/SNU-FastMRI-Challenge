@@ -49,9 +49,10 @@ def parse():
     parser.add_argument("--loss_mask", default=False, action = "store_true", help="Use mask for training Loss")
 
     # model
-    parser.add_argument('--model', type=str, default='varnet', choices = ["varnet", "eamri"], help='Model to train')
+    parser.add_argument('--model', type=str, default='varnet', choices = ["varnet", "eamri", "mdnet"], help='Model to train')
 
-
+    
+    parser.add_argument("--mode", type=str, default = None)
     # gradient
     parser.add_argument('--grad_accumulation', type=int, default=4, help='Gradient accumulation')
     parser.add_argument('--grad_norm', type=float, default=1e8, help='Gradient clipping')
@@ -67,7 +68,7 @@ def parse():
 
 
     # loss
-    parser.add_argument('--loss', type=str, default='ssim', choices = ["mse", "ssim", "edge"], help='Loss to train')
+    parser.add_argument('--loss', type=str, default='ssim', choices = ["mse", "ssim", "edge", "ms-ssim"], help='Loss to train')
     parser.add_argument("--edge_weight", type=float, default=1, help="Weight for edge loss") # 1 in original EAMRI paper
 
     # data

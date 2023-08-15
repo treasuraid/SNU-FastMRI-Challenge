@@ -109,7 +109,7 @@ class MultiSliceData2nd(Dataset):
 
 
 class SliceData(Dataset):
-    def __init__(self, root, transform, input_key, target_key, forward=False, edge=False):
+    def __init__(self, root, transform, input_key, target_key, forward=False, edge=False, mode = None):
         self.transform = transform
         self.input_key = input_key
         self.target_key = target_key
@@ -118,19 +118,32 @@ class SliceData(Dataset):
         self.kspace_examples = []
         self.weights = []
         self.edge = edge
+        self.mode = mode 
+        
         if not forward:
             image_files = list(Path(root / "image").iterdir())
             for fname in sorted(image_files):
                 num_slices = self._get_metadata(fname)
-                self.image_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+                if self.mode is not None :
+                    if self.mode in str(fname) : 
+                        self.image_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+                    
+                else: 
+                    self.image_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
 
         kspace_files = list(Path(root / "kspace").iterdir())
         for fname in sorted(kspace_files):
             num_slices = self._get_metadata(fname)
-            self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
-            # 2 times more weight for 1 slice than last slice and sum of weights in each fname is 1
-            # print([(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)], sum([(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)]), num_slices)
+            
+            if self.mode is not None :
+                if self.mode in str(fname) : 
+                    self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+            
+            else :
+                self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+            
             self.weights += [(1.4) - (0.8)*i/(num_slices -1) for i in range(num_slices)]
+        
         self.weights = np.array(self.weights)      
 
     def _get_metadata(self, fname):
@@ -192,7 +205,8 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= Fa
             input_key=args.input_key,
             target_key=target_key_,
             forward = isforward,
-            edge= args.edge
+            edge= args.edge,
+            mode = args.mode
         )
 
         data_loader = DataLoader(
@@ -215,6 +229,7 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= Fa
             target_key=target_key_,
             forward=isforward,
             edge=args.edge,
+            mode = args.mode
         )
         if args.wrs:
             print("Using Weighted Random Sampler")
