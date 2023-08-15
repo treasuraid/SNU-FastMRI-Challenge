@@ -11,6 +11,8 @@ from utils.common.loss_function import SSIMLoss
 from utils.model.unet import Unet
 from utils.model.kbnet import KBNet_l,  KBNet_s
 from utils.model.NAFNet_arch import NAFNet
+from utils.model.rcan import RCAN
+
 from utils.data.load_data import SliceData2nd, MultiSliceData2nd
 from utils.data.transforms import DataTransform2nd, MultiDataTransform2nd
 import pandas as pd 
@@ -19,6 +21,7 @@ import wandb
 import matplotlib.pyplot as plt
 
 from kornia.morphology import dilation, erosion 
+
 
 def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
     model.train()
@@ -200,12 +203,21 @@ def train(args):
         model = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
                       enc_blk_nums=enc_blks, dec_blk_nums=dec_blks)
 
+    elif args.model == "rcan":
+        args.n_feats = 160
+        args.n_resblocks = 25
+        args.n_resgroups = 4 
+        args.reduction = 16
+        args.res_scale = 0.125
+        model = RCAN(args)
     
     print(model)
     model.to(device=device)
     loss_type = SSIMLoss().to(device=device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay= args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 40, gamma= 0.2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay= args.weight_decay)
+#     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size= 40, gamma= 0.2)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.5)
+    
     best_val_loss = 1.
     start_epoch = 0
     
@@ -215,7 +227,7 @@ def train(args):
         train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
         val_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
         train_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_train",
+                                args.recon_path / "reconstructions_val",
                                 transform=train_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key),
@@ -224,7 +236,7 @@ def train(args):
                                     num_workers=args.num_workers)
     
         val_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_val,  
-                                args.recon_path / "reconstructions_val",
+                                args.recon_path / "reconstructions_train",
                                 transform=val_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key),
@@ -237,7 +249,7 @@ def train(args):
         val_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
 
         train_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_train",
+                                args.recon_path / "reconstructions_val",
                                 transform=train_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key,num_slices = 3),

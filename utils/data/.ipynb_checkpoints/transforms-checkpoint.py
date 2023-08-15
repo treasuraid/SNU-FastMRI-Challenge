@@ -97,13 +97,13 @@ class DataTransform2nd:
         input_image = to_tensor(input_image).unsqueeze(0)  
         grappa_image = to_tensor(grappa_image).unsqueeze(0) 
         recon_image = to_tensor(recon_image).unsqueeze(0) 
-        inputs = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        inputs = torch.cat((recon_image, grappa_image), dim = 0) # channel first 
         brightness = 1.0
         if self.aug : 
             brightness = random.uniform(1.0, 2.0)
             aug_input = torch.cat((input_image, recon_image, grappa_image, target), dim = 0)
             aug_output = self.augmentation(aug_input * brightness)
-            inputs = aug_output[:3,...] 
+            inputs = aug_output[1:3,...] 
             target = aug_output[3,...]
         
         

@@ -50,19 +50,19 @@ def parse() :
     parser.add_argument('--seed', type=int, default=2023, help='Fix random seed')
     
     parser.add_argument("--loss_mask", type= bool ,default = True)
-    parser.add_argument("--weight-decay", type=float, default=0.00001, help="Weight decay")
+    parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay")
     parser.add_argument("--num-workers", type= int, default = 4)
     parser.add_argument("--edge", type=bool, default=False)
     parser.add_argument("--aug", type=bool, default=True)
     
     parser.add_argument("--grad_accumulation", type = int, default = 1)
-    parser.add_argument('--grad_norm', type=float, default=0.01, help='Gradient clipping')
+    parser.add_argument('--grad_norm', type=float, default=1000000000, help='Gradient clipping')
 
     parser.add_argument("--multi-channel", type = bool, default = False)
     
-    parser.add_argument("--input_channel", type = int, default = 3) # original, grappa, recon from e2evarnet
+    parser.add_argument("--input_channel", type = int, default = 2) # original, grappa, recon from e2evarnet
     
-    parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet"]) 
+    parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet", "rcan"]) 
     args = parser.parse_args()
     
     return args 

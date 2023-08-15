@@ -18,7 +18,7 @@ from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss, EdgeMAELoss, FocalFrequencyLoss, MS_SSIM 
 from utils.model.varnet import VarNet, VarnetAdded
 from utils.model.EAMRI import EAMRI
-from utils.model.test_direct import CustomMutiDomainNet 
+# from utils.model.test_direct import CustomMutiDomainNet 
 import os
 import torch.nn.functional as F
 
@@ -230,7 +230,8 @@ def train(args):
         model = VarnetAdded(num_cascades=args.cascade)
         
     elif args.model == "mdnet":
-        model = CustomMutiDomainNet()
+#         model = CustomMutiDomainNet()
+        exit(1)
     else:
         raise NotImplementedError("model not found")
 
@@ -276,7 +277,7 @@ def train(args):
     
 #     # test saving and validation
     # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
     # print(val_loss)
     for epoch in range(start_epoch, args.num_epochs):
 
