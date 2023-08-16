@@ -239,7 +239,8 @@ def train(args):
                                 args.recon_path / "reconstructions_train",
                                 transform=val_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
+                                target_key= args.target_key,
+                                part = True),
                                     batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)
@@ -249,7 +250,7 @@ def train(args):
         val_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
 
         train_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_val",
+                                args.recon_path / "reconstructions_train",
                                 transform=train_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key,num_slices = 3),

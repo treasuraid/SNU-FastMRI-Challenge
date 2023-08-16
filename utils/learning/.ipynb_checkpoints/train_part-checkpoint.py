@@ -238,12 +238,13 @@ def train(args):
     print_model_num_parameters(model)
     
     model = model.to(device=device)
-    optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=0.00001)
+    optimizer = torch.optim.AdamW(model.parameters(), args.lr, weight_decay=0.0002)
 
     # get scheduler
     if args.scheduler is not None:
         if args.scheduler == "cosine":
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+            print("use cosineanealingLR")
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.max_epochs)
         elif args.scheduler == "step":
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
         else:
@@ -277,7 +278,7 @@ def train(args):
     
 #     # test saving and validation
     # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
     # print(val_loss)
     for epoch in range(start_epoch, args.num_epochs):
 

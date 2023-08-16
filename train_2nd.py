@@ -33,8 +33,8 @@ def parse() :
     parser.add_argument('--report-interval', type=int, default=100, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
     
-    parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/train/image', help='Directory of train data')
-    parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/val/image', help='Directory of validation data')
+    parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/val/image', help='Directory of train data')
+    parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/train/image', help='Directory of validation data')
  
     
     # grappa and reconstruction
