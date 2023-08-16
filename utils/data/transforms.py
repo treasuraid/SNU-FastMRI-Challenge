@@ -97,13 +97,13 @@ class DataTransform2nd:
         input_image = to_tensor(input_image).unsqueeze(0)  
         grappa_image = to_tensor(grappa_image).unsqueeze(0) 
         recon_image = to_tensor(recon_image).unsqueeze(0) 
-        inputs = torch.cat((input_image, recon_image, grappa_image), dim = 0) # channel first 
+        inputs = torch.cat((recon_image, grappa_image), dim = 0) # channel first 
         brightness = 1.0
         if self.aug : 
             brightness = random.uniform(1.0, 2.0)
             aug_input = torch.cat((input_image, recon_image, grappa_image, target), dim = 0)
             aug_output = self.augmentation(aug_input * brightness)
-            inputs = aug_output[:3,...] 
+            inputs = aug_output[1:3,...] 
             target = aug_output[3,...]
         
         
@@ -214,17 +214,9 @@ class VarNetDataTransform:
                 
                 kspace, target = self.augmentor(kspace, target.shape)
 
-        if np.random.rand() > 0.5:
-            # augment mask or not
-            seed = None if not self.use_seed else tuple(map(ord, fname))
-            mask_func = create_mask_for_mask_type(
-                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(4,6)]
-            )
-            seed = None if not self.use_seed else tuple(map(ord, fname))
-            mask = mask_func(np.array(kspace.shape), seed).float()
-        else :
-            mask = np.roll(mask, random.randint(-2, 2), axis=0)
-            mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).float()
+        
+        mask = np.roll(mask, random.randint(-2, 2), axis=0)
+        mask = torch.from_numpy(mask.reshape(1, 1, kspace.shape[-2], 1).astype(np.float32)).float()
         masked_kspace = kspace * mask + 0.0
         return (
             mask.float(),

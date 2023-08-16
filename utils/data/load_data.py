@@ -11,7 +11,7 @@ import os
 class SliceData2nd(Dataset):
     
     def __init__(self, input_root, recon_root, transform, input_key, 
-                 target_key, forward=False, edge=False):
+                 target_key, forward=False, edge=False, part = False ):
         self.transform = transform
         print(input_key)
         self.input_key = input_key
@@ -27,8 +27,10 @@ class SliceData2nd(Dataset):
         
         for fname in sorted(image_files):
             num_slices = self._get_metadata(os.path.join(input_root, fname))
-            self.input_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
-            
+            if not part :
+                self.input_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+            else :
+                self.input_examples += [(fname, slice_ind) for slice_ind in range(10)]
     def _get_metadata(self, fname):
         with h5py.File(fname, "r") as hf:
             if self.input_key in hf.keys():
@@ -109,7 +111,7 @@ class MultiSliceData2nd(Dataset):
 
 
 class SliceData(Dataset):
-    def __init__(self, root, transform, input_key, target_key, forward=False, edge=False, filenums = None):
+    def __init__(self, root, transform, input_key, target_key, forward=False, edge=False, mode = None):
         self.transform = transform
         self.input_key = input_key
         self.target_key = target_key
@@ -203,7 +205,8 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= Fa
             input_key=args.input_key,
             target_key=target_key_,
             forward = isforward,
-            edge= args.edge
+            edge= args.edge,
+            mode = args.mode
         )
 
         data_loader = DataLoader(
@@ -226,6 +229,7 @@ def create_data_loaders(data_path, args, shuffle=False, isforward=False, aug= Fa
             target_key=target_key_,
             forward=isforward,
             edge=args.edge,
+            mode = args.mode
         )
         if args.wrs:
             print("Using Weighted Random Sampler")

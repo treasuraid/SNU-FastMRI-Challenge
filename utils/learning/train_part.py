@@ -11,14 +11,14 @@ from tqdm import tqdm
 from pathlib import Path
 import copy
 import pandas as pd
-
+import matplotlib.pyplot as plt
 from collections import defaultdict
 from utils.data.load_data import create_data_loaders
 from utils.common.utils import *
 from utils.common.loss_function import SSIMLoss, EdgeMAELoss, FocalFrequencyLoss, MS_SSIM 
 from utils.model.varnet import VarNet, VarnetAdded
 from utils.model.EAMRI import EAMRI
-from utils.model.test_direct import CustomMutiDomainNet 
+# from utils.model.test_direct import CustomMutiDomainNet 
 import os
 import torch.nn.functional as F
 
@@ -51,7 +51,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         target = target.to(device)
         # use gt.max 
 #         maximum = maximum.to(device) 
-        maximum = target.max()
+        maximum = target.max().view(-1,1,1,1)
         # kspace_origin = kspace_origin.to(device)
         kspace.requires_grad = True
         # mask.requires_grad = True
@@ -59,7 +59,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         
         
         output_image = model(kspace, mask)
-        
+
         if args.model == "eamri": 
             output_edges, output_image = output_image[0], output_image[1]
         if args.loss_mask:
@@ -81,7 +81,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
                 output_edges = output_edges * loss_mask
                 edge = edge * loss_mask 
 
-        if args.moel == "eamri":
+        if args.model == "eamri":
             print("output_image", output_image.shape)
             loss = loss_type((output_edges, output_image), (target, edge), maximum)
             loss_ssim = SSIMLoss()(output_image, target, maximum)
@@ -144,7 +144,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
                 edge_output, output = model(kspace, mask) 
             else :
                 output = model(kspace, mask)
-            if args.loss_mask:
+            if True:
                 loss_mask  = (target > 5e-5).float().unsqueeze(0)
             # for 1 time 
                 loss_mask  = erosion(loss_mask, k)
@@ -230,19 +230,21 @@ def train(args):
         model = VarnetAdded(num_cascades=args.cascade)
         
     elif args.model == "mdnet":
-        model = MyMultiDomainNet()
+#         model = CustomMutiDomainNet()
+        exit(1)
     else:
         raise NotImplementedError("model not found")
 
     print_model_num_parameters(model)
     
     model = model.to(device=device)
-    optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=0)
+    optimizer = torch.optim.AdamW(model.parameters(), args.lr, weight_decay=0.0002)
 
     # get scheduler
     if args.scheduler is not None:
         if args.scheduler == "cosine":
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+            print("use cosineanealingLR")
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.max_epochs)
         elif args.scheduler == "step":
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
         else:
@@ -304,7 +306,7 @@ def train(args):
     
 #     # test saving and validation
     # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
-    # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
+#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
     # print(val_loss)
     for epoch in range(start_epoch, args.num_epochs):
 
@@ -393,7 +395,7 @@ def resume_from(model, optimizer, ckpt_path, device : torch.device = torch.devic
 
     checkpoint = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(checkpoint['model'], strict = False)
-    optimizer.load_state_dict(checkpoint['optimizer'])
+#     optimizer.load_state_dict(checkpoint['optimizer'])
     
     logger.warning("resume from ", ckpt_path)
     logger.warning("resume from epoch ", checkpoint['epoch'])
