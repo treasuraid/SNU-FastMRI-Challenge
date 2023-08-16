@@ -62,7 +62,7 @@ def parse():
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
 
     # scheduler
-    parser.add_argument('--scheduler', type=str, default=None, choices = [None, "cosine", "step"], help='Scheduler to train')
+    parser.add_argument('--scheduler', type=str, default="step", choices = [None, "cosine", "step"], help='Scheduler to train')
     parser.add_argument('--step_size', type=int, default=10, help='Step size for scheduler')
     parser.add_argument('--gamma', type=float, default=0.5, help='Gamma for scheduler')
 

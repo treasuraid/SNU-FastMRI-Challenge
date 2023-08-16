@@ -120,32 +120,33 @@ class SliceData(Dataset):
         self.kspace_examples = []
         self.weights = []
         self.edge = edge
-        self.mode = mode 
         
-        if not forward:
-            image_files = list(Path(root / "image").iterdir())
-            for fname in sorted(image_files):
-                num_slices = self._get_metadata(fname)
-                if self.mode is not None :
-                    if self.mode in str(fname) : 
-                        self.image_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
-                    
-                else: 
+        if type(root) != list :
+            if not forward:
+                image_files = list(Path(root / "image").iterdir())
+                for fname in sorted(image_files):
+                    num_slices = self._get_metadata(fname)
                     self.image_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
 
-        kspace_files = list(Path(root / "kspace").iterdir())
-        for fname in sorted(kspace_files):
-            num_slices = self._get_metadata(fname)
-            
-            if self.mode is not None :
-                if self.mode in str(fname) : 
-                    self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
-            
-            else :
+            kspace_files = list(Path(root / "kspace").iterdir())
+            for fname in sorted(kspace_files):
+                num_slices = self._get_metadata(fname)
                 self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)]
+                self.weights += [(1.4) - (0.8)*i/(num_slices -1) for i in range(num_slices)]
             
-            self.weights += [(1.4) - (0.8)*i/(num_slices -1) for i in range(num_slices)]
-        
+        # from now on root means list of files
+        else : 
+            for fname in sorted(root): 
+                num_slices = self._get_metadata(fname) # number of slices in each file 
+                self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)] # list of (fname, slice_ind) tuples
+                self.weights += [(1.4) - (0.8)*i/(num_slices -1) for i in range(num_slices)]
+                if not forward : 
+                    image_data_fname = Path(str(fname).replace("kspace", "image"))
+                    self.image_examples += [(image_data_fname, slice_ind) for slice_ind in range(num_slices)]
+
+        #     # 2 times more weight for 1 slice than last slice and sum of weights in each fname is 1
+            # print([(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)], sum([(1.25) - (0.5)*i/(num_slices -1) for i in range(num_slices)]), num_slices)
+            # self.weights += [(1.4) - (0.8)*i/(num_slices -1) for i in range(num_slices)]
         self.weights = np.array(self.weights)      
 
     def _get_metadata(self, fname):

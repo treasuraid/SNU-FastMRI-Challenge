@@ -62,7 +62,7 @@ def parse():
     parser.add_argument('--config', type=str, default = "./utils/model/config/swin_36.yaml", help = "config of swinUnetblock")
 
     # scheduler
-    parser.add_argument('--scheduler', type=str, default=None, choices = [None, "cosine", "step"], help='Scheduler to train')
+    parser.add_argument('--scheduler', type=str, default="step", choices = [None, "cosine", "step"], help='Scheduler to train')
     parser.add_argument('--step_size', type=int, default=10, help='Step size for scheduler')
     parser.add_argument('--gamma', type=float, default=0.5, help='Gamma for scheduler')
 
@@ -77,6 +77,13 @@ def parse():
     parser.add_argument("--collate", default=False, action = "store_true", help="Use collate function for training and validation")
 
     parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint")
+
+    # kfold 
+    parser.add_argument("--data_seed", type=int, required=True, help="Seed for kfold split")
+    
+    parser.add_argument("--data_split_num", type=int, required=True, choices=[0,1,2,3], help="Number of split for kfold") 
+
+
 
     # augmentation aug delay max epochs aug strength
     # parser.add_argument("--aug_delay", type=int, default=0, help="Augmentation delay")

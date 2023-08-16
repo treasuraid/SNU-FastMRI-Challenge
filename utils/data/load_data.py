@@ -141,7 +141,7 @@ class SliceData(Dataset):
                 self.kspace_examples += [(fname, slice_ind) for slice_ind in range(num_slices)] # list of (fname, slice_ind) tuples
                 self.weights += [(1.4) - (0.8)*i/(num_slices -1) for i in range(num_slices)]
                 if not forward : 
-                    image_data_fname = fname.replace("kspace", "image")
+                    image_data_fname = Path(str(fname).replace("kspace", "image"))
                     self.image_examples += [(image_data_fname, slice_ind) for slice_ind in range(num_slices)]
 
         #     # 2 times more weight for 1 slice than last slice and sum of weights in each fname is 1

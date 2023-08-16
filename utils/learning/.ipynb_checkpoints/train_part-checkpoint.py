@@ -162,6 +162,7 @@ def validate(args, model, data_loader, device=torch.device("cuda:0")):
 
             if (iter % args.report_interval == 0 and (iter > 0)):
                 print(f"{iter} validation done")
+                
 
     for fname in reconstructions:
         reconstructions[fname] = np.stack([out for _, out in sorted(reconstructions[fname].items())])
@@ -272,8 +273,32 @@ def train(args):
     start_epoch = 0
     val_loss_log = np.empty((0, 2))
     
-    train_dataset, train_loader = create_data_loaders(data_path=args.data_path_train, args=args, shuffle=True, aug=args.aug)
-    _ , val_loader = create_data_loaders(data_path=args.data_path_val, args=args, shuffle=False, aug= False)
+    # mix val data file path and train data file path for k-fold validation
+    
+    data_files = []
+
+    data_files += [Path(os.path.join(args.data_path_val / "kspace", file)) for file in sorted(os.listdir(args.data_path_val / "kspace"))] 
+    
+    data_files += [Path(os.path.join(args.data_path_train / "kspace", file)) for file in sorted(os.listdir(args.data_path_train / "kspace"))] 
+    
+    # shuffle data_files 80% train, 20% val
+    
+    # seed fixing
+    np.random.seed(args.data_seed) 
+    np.random.shuffle(data_files) 
+    
+    # split data_files by args.data_split_num [0,1,2,3,4] # to avoid data leakage
+    
+    # 0 -> val ~ 0.2 , train ~ 0.8 
+    # 1 -> val ~ 0.2 ~ 0.4  , train except it 
+    # 2 -> val ~ 0.4 ~ 0.6 , train except it
+    # 3 -> val ~ 0.6 ~ 0.8 , train except it
+    # 4 -> val ~ 0.8 ~ 1.0 , train except it
+    
+    val_data_path = data_files[int(len(data_files) * args.data_split_num / 5) : int(len(data_files) * (args.data_split_num + 1) / 5)]
+    train_data_path = data_files[:int(len(data_files) * args.data_split_num / 5)] + data_files[int(len(data_files) * (args.data_split_num + 1) / 5):]
+    train_dataset, train_loader = create_data_loaders(data_path=train_data_path, args=args, shuffle=True, aug=args.aug)
+    _ , val_loader = create_data_loaders(data_path=val_data_path, args=args, shuffle=False, aug= False)
     
     
 #     # test saving and validation
