@@ -77,6 +77,13 @@ def parse():
 
     parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint")
 
+    # kfold 
+    parser.add_argument("--data_seed", type=int, required=True, help="Seed for kfold split")
+    
+    parser.add_argument("--data_split_num", type=int, required=True, choices=[0,1,2,3], help="Number of split for kfold") 
+
+
+
     # augmentation aug delay max epochs aug strength
     # parser.add_argument("--aug_delay", type=int, default=0, help="Augmentation delay")
     parser.add_argument("--max_epochs", type=int, default=100, help="Max epochs for augmentation")
