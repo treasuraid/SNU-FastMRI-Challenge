@@ -50,7 +50,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, scheduler, loss_type
         target = target.to(device)
         # use gt.max 
 #         maximum = maximum.to(device) 
-        maximum = target.max() 
+        maximum = target.max().view(-1,1,1,1)
         # kspace_origin = kspace_origin.to(device)
         kspace.requires_grad = True
         # mask.requires_grad = True
@@ -258,6 +258,10 @@ def train(args):
     # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
     # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
     # print(val_loss)
+    start_epoch = 32 
+    if args.aug :
+            train_dataset.transform.augmentor.current_epoch += 32
+    
     for epoch in range(start_epoch, args.num_epochs):
 
         logger.warning(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')
@@ -345,8 +349,10 @@ def resume_from(model, optimizer, ckpt_path, device : torch.device = torch.devic
 
     checkpoint = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(checkpoint['model'], strict = False)
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    
+    try : 
+        optimizer.load_state_dict(checkpoint['optimizer'])
+    except:
+        ...
     logger.warning("resume from ", ckpt_path)
     logger.warning("resume from epoch ", checkpoint['epoch'])
     logger.warning("resume from best_val_loss ", checkpoint['best_val_loss'])
