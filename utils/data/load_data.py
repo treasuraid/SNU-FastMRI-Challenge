@@ -22,6 +22,7 @@ class SliceData2nd(Dataset):
         self.grappa_root = grappa_root
         self.input_examples = []
         
+        print(self.input_root, self.recon_root, self.grappa_root)
         image_files = os.listdir(input_root)
         
         for fname in sorted(image_files):
@@ -63,7 +64,8 @@ class SliceData2nd(Dataset):
 
         with h5py.File(os.path.join(self.recon_root,input_fname), 'r') as f:
             recon_image = np.array(f["reconstruction"])[dataslice].astype(np.float32)
-
+        
+#         print(np.max(target_image), np.max(recon_image), np.max(grappa_image))
         return self.transform(input_image, grappa_image, recon_image, target_image, attr, input_fname, dataslice)
 
 class MultiSliceData2nd(Dataset):

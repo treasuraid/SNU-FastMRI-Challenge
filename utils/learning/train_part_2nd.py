@@ -200,7 +200,7 @@ def train(args):
         train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
         val_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
         train_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_train",
+                                args.recon_path / "reconstructions_train_model6",
                                 transform=train_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key,
@@ -210,7 +210,7 @@ def train(args):
                                     num_workers=args.num_workers)
     
         val_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_val,  
-                                args.recon_path / "reconstructions_val",
+                                args.recon_path / "reconstructions_val_model6",
                                 transform=val_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key,
