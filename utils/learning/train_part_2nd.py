@@ -254,7 +254,7 @@ def train(args):
     
     
     val_loss_log = np.empty((0, 2))
-    val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
+#     val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader, device)
     
     for epoch in range(start_epoch, args.num_epochs):
         print(f'Epoch #{epoch:2d} ............... {args.net_name} ...............')

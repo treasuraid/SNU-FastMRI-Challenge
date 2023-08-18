@@ -63,6 +63,7 @@ def parse() :
     
     parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet"]) 
     parser.add_argument("--grappa_path", type= Path, default = "../../Data/grappa/")
+    parser.add_argument("--grad_norm", type = float, default = 100)
     args = parser.parse_args()
     
     return args 
