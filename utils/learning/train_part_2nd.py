@@ -59,9 +59,16 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
                 loss_mask = loss_mask.squeeze(0)
                 output= output * loss_mask
                 target = target * loss_mask 
+        
+        if ((iter + 1) % args.grad_accumulation) == 0:
+            if args.grad_norm > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
+            optimizer.step()
+            
+            optimizer.zero_grad()
             
         total_loss += loss.item() * args.grad_accumulation 
-
+        
         wandb.log({"batch_loss": loss.item() * args.grad_accumulation})
         
         if iter % args.report_interval == 0:

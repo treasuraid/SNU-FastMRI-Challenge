@@ -59,9 +59,16 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
                 loss_mask = loss_mask.squeeze(0)
                 output= output * loss_mask
                 target = target * loss_mask 
+        
+        if ((iter + 1) % args.grad_accumulation) == 0:
+            if args.grad_norm > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)
+            optimizer.step()
+            
+            optimizer.zero_grad()
             
         total_loss += loss.item() * args.grad_accumulation 
-
+        
         wandb.log({"batch_loss": loss.item() * args.grad_accumulation})
         
         if iter % args.report_interval == 0:
@@ -200,7 +207,7 @@ def train(args):
         train_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = args.aug)
         val_transform = DataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
         train_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_train",
+                                args.recon_path / "reconstructions_train_model6",
                                 transform=train_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key,
@@ -210,7 +217,7 @@ def train(args):
                                     num_workers=args.num_workers)
     
         val_loader = torch.utils.data.DataLoader(SliceData2nd(args.data_path_val,  
-                                args.recon_path / "reconstructions_val",
+                                args.recon_path / "reconstructions_val_model6",
                                 transform=val_transform,
                                 input_key = args.input_key,
                                 target_key= args.target_key,
