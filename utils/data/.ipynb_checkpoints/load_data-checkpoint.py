@@ -11,7 +11,7 @@ import os
 class SliceData2nd(Dataset):
     
     def __init__(self, input_root, recon_root, transform, input_key, 
-                 target_key, forward=False, edge=False):
+                 target_key, forward=False, edge=False, grappa_root = None):
         self.transform = transform
         self.input_key = input_key
         self.target_key = target_key 
@@ -19,7 +19,7 @@ class SliceData2nd(Dataset):
         self.edge = edge
         self.input_root = input_root 
         self.recon_root = recon_root
-        
+        self.grappa_root = grappa_root
         self.input_examples = []
         
         image_files = os.listdir(input_root)
@@ -50,8 +50,16 @@ class SliceData2nd(Dataset):
 #             print(f.keys())
             input_image = np.array(f[self.input_key])[dataslice].astype(np.float32)
             target_image = np.array(f[self.target_key])[dataslice].astype(np.float32)
-            grappa_image = np.array(f["image_grappa"])[dataslice].astype(np.float32)
             attr = dict(f.attrs)
+            if self.grappa_root is None : 
+                
+                grappa_image = np.array(f["image_grappa"])[dataslice].astype(np.float32)
+        
+        if self.grappa_root is not None :
+#             print(self.grappa_root, input_fname)
+            with h5py.File(os.path.join(self.grappa_root,input_fname), 'r') as f:
+                grappa_image = np.array(f["image_grappa"])[dataslice].astype(np.float32)
+                
 
         with h5py.File(os.path.join(self.recon_root,input_fname), 'r') as f:
             recon_image = np.array(f["reconstruction"])[dataslice].astype(np.float32)
@@ -77,7 +85,7 @@ class MultiSliceData2nd(Dataset):
         for fname in sorted(image_files):
             num_slices = self._get_metadata(os.path.join(input_root, fname))
             self.input_examples += [(fname, slice_ind) for slice_ind in range(num_slices-self.num_slices+1)]
-            self.sampling_weights += [(1.4) - (0.8)*i/(num_slices -self.num_slices)for i in range(num_slices -self.num_slices +1)]
+            self.sampling_weights += [(1.1) - (0.2)*i/(num_slices -self.num_slices)for i in range(num_slices -self.num_slices +1)]
             
     def _get_metadata(self, fname):
         with h5py.File(fname, "r") as hf:

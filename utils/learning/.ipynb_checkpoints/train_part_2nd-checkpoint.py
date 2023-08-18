@@ -10,6 +10,7 @@ from utils.common.utils import save_reconstructions, ssim_loss
 from utils.common.loss_function import SSIMLoss
 from utils.model.unet import Unet
 from utils.model.kbnet import KBNet_l,  KBNet_s
+from utils.model.NAFNet_arch import NAFNet
 from utils.data.load_data import SliceData2nd, MultiSliceData2nd
 from utils.data.transforms import DataTransform2nd, MultiDataTransform2nd
 import pandas as pd 
@@ -17,11 +18,16 @@ from tqdm import tqdm
 import wandb
 import matplotlib.pyplot as plt
 
+from kornia.morphology import dilation, erosion 
+
 def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
     model.train()
     start_epoch = start_iter = time.perf_counter()
     len_loader = len(data_loader)
     total_loss = 0.
+
+    k = torch.ones(3,3).float().to(device)
+
 
     for iter, data in enumerate(tqdm(data_loader)):
         input, target, maximum, _, _, brightness = data
@@ -36,18 +42,25 @@ def train_epoch(args, epoch, model, data_loader, optimizer, loss_type, device):
         target = target.squeeze(1)
         
         if args.loss_mask : 
-            output = (target > (2e-5 * brightness[:,None,None]))*output
-            target = (target > (2e-5 * brightness[:,None,None])) * target
+            output = (target > (5e-5 * brightness[:,None,None]))*output
+            target = (target > (5e-5 * brightness[:,None,None])) * target
             
 #         print(output.shape, target.shape, maximum)
         loss = loss_type(output, target, maximum) / args.grad_accumulation 
         loss.backward()  
-        if ((iter + 1) % args.grad_accumulation) == 0:  
-            optimizer.step()  
-            optimizer.zero_grad()
+        if args.loss_mask : 
+                loss_mask  = (target > 5e-5).float().unsqueeze(0)
+                # for 1 time 
+                loss_mask  = erosion(loss_mask, k)
+                for i in range(15):
+                    loss_mask = dilation(loss_mask, k)
+                for i in range(14):
+                    loss_mask = erosion(loss_mask, k)
+                loss_mask = loss_mask.squeeze(0)
+                output= output * loss_mask
+                target = target * loss_mask 
             
         total_loss += loss.item() * args.grad_accumulation 
-
 
         wandb.log({"batch_loss": loss.item() * args.grad_accumulation})
         
@@ -69,6 +82,7 @@ def validate(args, model, data_loader, device):
     targets = defaultdict(dict)
     inputs = defaultdict(dict)
     start = time.perf_counter()
+    k = torch.ones(3,3).float().to(device)
 
     df = pd.DataFrame(columns = [i for i in range(0, 30)])
     with torch.no_grad():
@@ -83,8 +97,16 @@ def validate(args, model, data_loader, device):
             output = output.squeeze(0)
             target = target.squeeze(0)
             if args.loss_mask : 
-                output = (target > (2e-5 * brightness[:,None,None]))*output
-                target = (target > (2e-5 * brightness[:,None,None])) * target
+                loss_mask  = (target > 5e-5).float().unsqueeze(0)
+            # for 1 time 
+                loss_mask  = erosion(loss_mask, k)
+                for i in range(15):
+                    loss_mask = dilation(loss_mask, k)
+                for i in range(14):
+                    loss_mask = erosion(loss_mask, k)
+                loss_mask = loss_mask.squeeze(0)
+                output= output * loss_mask
+                target = target * loss_mask 
 
             for i in range(output.shape[0]):
                 reconstructions[fnames[i]][int(slices[i])] = output[i].cpu().numpy()
@@ -147,8 +169,22 @@ def train(args):
     print('Current cuda device: ', torch.cuda.current_device())
     
     # todo : add config file for better readability
-    model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
-                 dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
+    
+    if args.model == "kbnet":
+        model = KBNet_s(img_channel=3, out_channel=1 if not args.multi_channel else 3, width=32, middle_blk_num=6, enc_blk_nums=[2, 2, 2, 2],
+                    dec_blk_nums=[2, 2, 2, 2], basicblock='KBBlock_s', lightweight=True, ffn_scale=1.5).to(device=device)
+    
+    elif args.model == "nafnet":
+        
+        width = 32
+        enc_blks = [2, 2, 4, 8]
+        middle_blk_num = 12
+        dec_blks = [2, 2, 2, 2]
+
+
+        model = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
+                      enc_blk_nums=enc_blks, dec_blk_nums=dec_blks)
+
     
     print(model)
     model.to(device=device)
@@ -167,7 +203,8 @@ def train(args):
                                 args.recon_path / "reconstructions_train",
                                 transform=train_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
+                                target_key= args.target_key,
+                                grappa_root = args.grappa_path / "train"),
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
@@ -176,7 +213,8 @@ def train(args):
                                 args.recon_path / "reconstructions_val",
                                 transform=val_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
+                                target_key= args.target_key,
+                                grappa_root = args.grappa_path / "val"),
                                     batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)
@@ -186,19 +224,23 @@ def train(args):
         val_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
 
         train_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_train",
+                                args.recon_path / "reconstructions_train_model6",
                                 transform=train_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key,num_slices = 3),
+                                target_key= args.target_key,
+                                 num_slices = 3,
+                                 grappa_root = args.grappa_path / "train"),
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
     
         val_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_val,  
-                                args.recon_path / "reconstructions_val",
+                                args.recon_path / "reconstructions_val_model6",
                                 transform=val_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key,num_slices = 3),
+                                target_key= args.target_key,
+                                num_slices = 3,
+                                grappa_root = args.grappa_path / "val"),
                                     batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)

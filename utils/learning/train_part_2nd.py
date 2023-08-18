@@ -182,7 +182,7 @@ def train(args):
         dec_blks = [2, 2, 2, 2]
 
 
-        modlel = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
+        model = NAFNet(img_channel=args.input_channel, width=width, middle_blk_num=middle_blk_num,
                       enc_blk_nums=enc_blks, dec_blk_nums=dec_blks)
 
     
@@ -203,7 +203,8 @@ def train(args):
                                 args.recon_path / "reconstructions_train",
                                 transform=train_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
+                                target_key= args.target_key,
+                                grappa_root = args.grappa_path / "train"),
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
@@ -212,7 +213,8 @@ def train(args):
                                 args.recon_path / "reconstructions_val",
                                 transform=val_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key),
+                                target_key= args.target_key,
+                                grappa_root = args.grappa_path / "val"),
                                     batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)
@@ -222,19 +224,23 @@ def train(args):
         val_transform = MultiDataTransform2nd(isforward= False, max_key= args.max_key, edge = args.edge, aug = False)
 
         train_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_train, 
-                                args.recon_path / "reconstructions_train",
+                                args.recon_path / "reconstructions_train_model6",
                                 transform=train_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key,num_slices = 3),
+                                target_key= args.target_key,
+                                 num_slices = 3,
+                                 grappa_root = args.grappa_path / "train"),
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.num_workers)
     
         val_loader = torch.utils.data.DataLoader(MultiSliceData2nd(args.data_path_val,  
-                                args.recon_path / "reconstructions_val",
+                                args.recon_path / "reconstructions_val_model6",
                                 transform=val_transform,
                                 input_key = args.input_key,
-                                target_key= args.target_key,num_slices = 3),
+                                target_key= args.target_key,
+                                num_slices = 3,
+                                grappa_root = args.grappa_path / "val"),
                                     batch_size=1,
                                     shuffle=False,
                                     num_workers=args.num_workers,)
