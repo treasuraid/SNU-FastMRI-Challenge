@@ -18,6 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from arch_util import LayerNorm2d
 from local_arch import Local_Base
+from typing import List, Tuple
 
 class SimpleGate(nn.Module):
     def forward(self, x):
@@ -157,6 +158,8 @@ class NAFNet(nn.Module):
         x = x +  inp[:, -2:-1, :, :]
     
         x = self.unnorm(x, mean[:,-2:-1,:,:], std[:,-2:-1,:,:])
+        
+        return x[:, :, :H, :W]
 
     def check_image_size(self, x):
         _, _, h, w = x.size()
