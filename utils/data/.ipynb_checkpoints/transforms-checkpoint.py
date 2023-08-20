@@ -214,11 +214,11 @@ class VarNetDataTransform:
                 
                 kspace, target = self.augmentor(kspace, target.shape)
 
-        if np.sum(mask) > 100:
+        if np.random.rand() > 0.5:
             # augment mask or not
             seed = None if not self.use_seed else tuple(map(ord, fname))
             mask_func = create_mask_for_mask_type(
-                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[5])
+                mask_type_str="equispaced", center_fractions=[0.08], accelerations=[np.random.randint(4,6)])
             seed = None if not self.use_seed else tuple(map(ord, fname))
             mask = mask_func(np.array(kspace.shape), seed).float()
         else :
