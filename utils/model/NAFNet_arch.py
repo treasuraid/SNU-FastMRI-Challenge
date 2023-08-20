@@ -18,6 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from arch_util import LayerNorm2d
 from local_arch import Local_Base
+from typing import List, Tuple
 
 class SimpleGate(nn.Module):
     def forward(self, x):
@@ -131,6 +132,8 @@ class NAFNet(nn.Module):
 
     def forward(self, inp):
         B, C, H, W = inp.shape
+        inp, mean, std = self.norm(inp)
+        
         inp = self.check_image_size(inp)
 
         x = self.intro(inp)
@@ -150,8 +153,12 @@ class NAFNet(nn.Module):
             x = decoder(x)
 
         x = self.ending(x)
-        x = x + 0.6*inp[:, -1:, :, :] + 0.4*inp[:, -2:-1, :, :]
-
+        
+#         print(mean.shape, std.shape, mean[:,-2:-1,:,:].shape, std[:,-2:-1,:,:].shape)
+        x = x +  inp[:, -2:-1, :, :]
+    
+        x = self.unnorm(x, mean[:,-2:-1,:,:], std[:,-2:-1,:,:])
+        
         return x[:, :, :H, :W]
 
     def check_image_size(self, x):
@@ -160,6 +167,22 @@ class NAFNet(nn.Module):
         mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
         x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
         return x
+    
+    def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # group norm
+        b, c, h, w = x.shape
+        x = x.view(b, c, h * w)
+
+        mean = x.mean(dim=2).view(b, c, 1, 1)
+        std = x.std(dim=2).view(b, c, 1, 1)
+        x = x.view(b,c,h,w)
+        return (x - mean) / std, mean, std # normal distribution
+
+    def unnorm(
+        self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
+    ) -> torch.Tensor:
+        return x * std + mean
+    
 
 class NAFNetLocal(Local_Base, NAFNet):
     def __init__(self, *args, train_size=(1, 3, 256, 256), fast_imp=False, **kwargs):

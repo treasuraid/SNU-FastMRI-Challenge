@@ -258,9 +258,9 @@ def train(args):
     # save_model(args, args.exp_dir, 0, model, optimizer, best_val_loss, False)
     # val_loss, num_subjects, reconstructions, targets, inputs, val_time = validate(args, model, val_loader)
     # print(val_loss)
-    start_epoch = 32 
+    start_epoch = args.start_epoch
     if args.aug :
-            train_dataset.transform.augmentor.current_epoch += 32
+            train_dataset.transform.augmentor.current_epoch += args.start_epoch
     
     for epoch in range(start_epoch, args.num_epochs):
 

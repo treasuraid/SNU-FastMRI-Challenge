@@ -214,7 +214,7 @@ class VarNetDataTransform:
                 
                 kspace, target = self.augmentor(kspace, target.shape)
 
-        if np.random.rand() > 1:
+        if np.sum(mask) > 100:
             # augment mask or not
             seed = None if not self.use_seed else tuple(map(ord, fname))
             mask_func = create_mask_for_mask_type(

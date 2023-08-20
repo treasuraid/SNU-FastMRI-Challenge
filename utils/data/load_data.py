@@ -11,7 +11,7 @@ import os
 class SliceData2nd(Dataset):
     
     def __init__(self, input_root, recon_root, transform, input_key, 
-                 target_key, forward=False, edge=False):
+                 target_key, forward=False, edge=False, grappa_root = None):
         self.transform = transform
         self.input_key = input_key
         self.target_key = target_key 
@@ -19,9 +19,10 @@ class SliceData2nd(Dataset):
         self.edge = edge
         self.input_root = input_root 
         self.recon_root = recon_root
-        
+        self.grappa_root = grappa_root
         self.input_examples = []
         
+        print(self.input_root, self.recon_root, self.grappa_root)
         image_files = os.listdir(input_root)
         
         for fname in sorted(image_files):
@@ -50,12 +51,21 @@ class SliceData2nd(Dataset):
 #             print(f.keys())
             input_image = np.array(f[self.input_key])[dataslice].astype(np.float32)
             target_image = np.array(f[self.target_key])[dataslice].astype(np.float32)
-            grappa_image = np.array(f["image_grappa"])[dataslice].astype(np.float32)
             attr = dict(f.attrs)
+            if self.grappa_root is None : 
+                
+                grappa_image = np.array(f["image_grappa"])[dataslice].astype(np.float32)
+        
+        if self.grappa_root is not None :
+#             print(self.grappa_root, input_fname)
+            with h5py.File(os.path.join(self.grappa_root,input_fname), 'r') as f:
+                grappa_image = np.array(f["image_grappa"])[dataslice].astype(np.float32)
+                
 
         with h5py.File(os.path.join(self.recon_root,input_fname), 'r') as f:
             recon_image = np.array(f["reconstruction"])[dataslice].astype(np.float32)
-
+        
+#         print(np.max(target_image), np.max(recon_image), np.max(grappa_image))
         return self.transform(input_image, grappa_image, recon_image, target_image, attr, input_fname, dataslice)
 
 class MultiSliceData2nd(Dataset):

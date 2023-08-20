@@ -33,14 +33,14 @@ def parse() :
     parser.add_argument('--report-interval', type=int, default=100, help='Report interval')
     parser.add_argument('-n', '--net-name', type=Path, default='test_varnet', help='Name of network', required=True)
     
-    parser.add_argument('-t', '--data-path-train', type=Path, default='../../Data/train/image', help='Directory of train data')
-    parser.add_argument('-v', '--data-path-val', type=Path, default='../../Data/val/image', help='Directory of validation data')
+    parser.add_argument('-t', '--data-path-train', type=Path, default='/Data/train/image', help='Directory of train data')
+    parser.add_argument('-v', '--data-path-val', type=Path, default='/Data/val/image', help='Directory of validation data')
  
     
     # grappa and reconstruction
     parser.add_argument("--mode", type=str, default="train", help="train or leaderboard or val",choices=["train", "leaderboard", "val"]) 
     parser.add_argument('--recon-path', type=Path, default='../result/varnet_16_aug_resume_from_epoch12/', help='Directory of recon data')
-    
+    parser.add_argument("--grappa-path", type=Path, default = "../../Data/grappa/", help = "If none use original grappa")
     
     parser.add_argument('--in-chans', type=int, default=1, help='Size of input channels for network')
     parser.add_argument('--out-chans', type=int, default=1, help='Size of output channels for network')
@@ -50,7 +50,7 @@ def parse() :
     parser.add_argument('--seed', type=int, default=2023, help='Fix random seed')
     
     parser.add_argument("--loss_mask", type= bool ,default = True)
-    parser.add_argument("--weight-decay", type=float, default=0.00001, help="Weight decay")
+    parser.add_argument("--weight-decay", type=float, default=0.00005, help="Weight decay")
     parser.add_argument("--num-workers", type= int, default = 4)
     parser.add_argument("--edge", type=bool, default=False)
     parser.add_argument("--aug", type=bool, default=True)
@@ -61,7 +61,12 @@ def parse() :
     
     parser.add_argument("--input_channel", type = int, default = 3) # original, grappa, recon from e2evarnet
     
-    parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet"]) 
+    parser.add_argument("--model", type = str, default = "nafnet", choices = ["nafnet", "kbnet", "rcan"]) 
+    parser.add_argument("--grappa_path", type= Path, default = "../../Data/grappa/")
+    parser.add_argument("--grad_norm", type = float, default = 100)
+    
+    parser.add_argument("--resume_from", type=str, default=None, help="Resume from checkpoint")
+    
     args = parser.parse_args()
     
     return args 

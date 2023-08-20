@@ -86,7 +86,7 @@ def parse():
     parser.add_argument("--wrs", action= "store_true", default=False, help="Weighted random sampling") 
     DataAugmentor.add_augmentation_specific_args(parser)
 
-    
+    parser.add_argument("--start_epoch", default = 0, type =int)
     
     args = parser.parse_args()
     # todo : argument to config file (yaml) for better readability

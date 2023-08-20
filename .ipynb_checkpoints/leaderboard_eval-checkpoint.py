@@ -55,11 +55,7 @@ def forward(args):
     
     your_data = glob.glob(os.path.join(args.your_data_path,'*.h5'))
     if len(your_data) != 58:
-        raise  NotImplementedError(f'Your Data Size Should Be 58 not {len(your_data)}')           
-    
-    # ssim score regarding the slice number
-    
-    ssim_by_slice = np.zeros((58, 40))
+        raise  NotImplementedError('Your Data Size Should Be 58')           
     
     ssim_total = 0
     idx = 0
@@ -72,8 +68,6 @@ def forward(args):
                 num_slices = hf['image_label'].shape[0]
             for i_slice in range(num_slices):
                 with h5py.File(l_fname, "r") as hf:
-
-                    # already SSIM score is calculated with mask
                     target = hf['image_label'][i_slice]
                     mask = np.zeros(target.shape)
                     mask[target>5e-5] = 1
@@ -86,23 +80,17 @@ def forward(args):
                     mask = (torch.from_numpy(mask).to(device=device)).type(torch.float)
 
                     maximum = hf.attrs['max']
-#                     maximum = torch.max(target)
                     
                 with h5py.File(y_fname, "r") as hf:
                     recon = hf[args.output_key][i_slice]
                     recon = torch.from_numpy(recon).to(device=device)
-#                     recon = recon / torch.mean(recon) * torch.mean(target)
+                    
                 #ssim_total += ssim_calculator(recon, target, maximum).cpu().numpy()
-                ssim_value =  ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
-                ssim_total += ssim_value
-                ssim_by_slice[i_subject, i_slice] = ssim_value
+                ssim_total += ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
                 idx += 1
             
-    print("Leaderboard Dataset SSIM : {:.4f}".format(ssim_total/idx))
+    return ssim_total/idx
 
-    # save ssim by slice to csv 
-    np.savetxt(os.path.join(args.your_data_path, "leaderboard_ssim_result.csv"), ssim_by_slice, delimiter=",")
-    
 
 if __name__ == '__main__':
     """
@@ -115,17 +103,24 @@ if __name__ == '__main__':
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
     parser.add_argument('-g', '--GPU_NUM', type=int, default=0)
-    parser.add_argument('-lp', '--leaderboard_data_path', type=Path, default='/Data/leaderboard/')
+    parser.add_argument('-lp', '--path_leaderboard_data', type=Path, default='/Data/leaderboard/')
+    
     """
     Modify Path Below To Test Your Results
     """
-    parser.add_argument('-yp', '--your_data_path', type=Path, default='../result/test_varnet_12_gracheck2/reconstructions_leaderboard/')
-    parser.add_argument('-m', '--mask', type=str, default='acc4', choices=['acc4', 'acc8'], help='type of mask | acc4 or acc8')
+    parser.add_argument('-yp', '--path_your_data', type=Path, default='../result/test_varnet/reconstructions_leaderboard/')
     parser.add_argument('-key', '--output_key', type=str, default='reconstruction')
     
     args = parser.parse_args()
     
-    args.leaderboard_data_path = args.leaderboard_data_path / args.mask / "image"
-    args.your_data_path = args.your_data_path / args.mask
-    forward(args)
-
+    #acc4
+    args.leaderboard_data_path = args.path_leaderboard_data / "acc4" / "image"
+    args.your_data_path = args.path_your_data / "acc4"
+    SSIM_acc4 = forward(args)
+    
+    #acc8
+    args.leaderboard_data_path = args.path_leaderboard_data / "acc8" / "image"
+    args.your_data_path = args.path_your_data / "acc8"
+    SSIM_acc8 = forward(args)
+    
+    print("Leaderboard Dataset SSIM : {:.4f}".format((SSIM_acc4 + SSIM_acc8) / 2))
