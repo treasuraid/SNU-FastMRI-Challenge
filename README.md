@@ -4,7 +4,7 @@
 - [Jinpil Choi] (Seoul National University)
 
 ## Introduction
-My Solution consist of 3 training steps.
+My solution consists of 3 training steps.
 
 1. Pre-training E2E-Varnet(6 cacacades, 13 unet channels, 4 sensitivity map channels) with total 5674 slices, 357 training patients mri data.
 
