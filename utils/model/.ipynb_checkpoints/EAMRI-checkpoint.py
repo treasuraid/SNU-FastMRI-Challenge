@@ -291,7 +291,8 @@ class EAMRI(nn.Module):
         x2 = self.net1(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
         e2 = self.edgeNet(x1)  # (B, 1, H, W)
         x1 = self.fuse1(x2, e2, masked_kspace, m, sens_map)
-        
+
+        e2.to("cpu")
 
         # second stage
         x2 = self.net2(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
@@ -315,7 +316,8 @@ class EAMRI(nn.Module):
 
         result = (result ** 2).sum(dim=1).sqrt().unsqueeze(dim = 1) # (B, H, W)
 
-        return torch.stack([e2,e3,e4,e5], dim = 0), result
+        return torch.stack([e2,e3,e4,e5], dim = 0)[..., (height - 384) // 2: 384 + (height - 384) // 2,
+                 (width - 384) // 2: 384 + (width - 384) // 2], result
 
 
 if __name__ == "__main__":

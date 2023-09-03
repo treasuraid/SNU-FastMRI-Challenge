@@ -11,8 +11,8 @@ import torch
 from torch import nn
 import transforms_simple_eamri as T
 from eamri_networkutil import dilatedConvBlock, DC_multicoil, rearrange, LayerNorm, SensitivityModel, default_conv
-
-
+from torch.utils.checkpoint import checkpoint
+import fastmri
 
 class rdn_convBlock(nn.Module):
     def __init__(self, convNum=3, recursiveTime=3, inChannel=2, midChannel=16, shift=False):
@@ -262,58 +262,75 @@ class EAMRI(nn.Module):
         self.fuse3 = EAM(indim, 1, attdim, num_head, bias=False, shift=shift)
         self.fuse4 = EAM(indim, 1, attdim, num_head, bias=False, shift=shift)
 
+    def custom(self, module):
+        """
+        checkpointing for memory saving
+        """
+        def custom_forward(*inputs):
+            if len(inputs) == 2:
+                inputs = module(inputs[0], inputs[1])
+            elif len(inputs) == 3:
+                inputs = module(inputs[0], inputs[1], inputs[2])
+            elif len(inputs) == 4:
+                inputs = module(inputs[0], inputs[1], inputs[2], inputs[3])
+            elif len(inputs) == 5:
+                inputs = module(inputs[0], inputs[1], inputs[2], inputs[3], inputs[4])
+            else :
+                inputs = module(inputs[0])
+            return inputs
+        return custom_forward
+
+
     def reduce(self, x, sens_map):
         x1 = T.reduce_operator(x, sens_map, dim=1)  # (B, H, W, 2)
         x1 = x1.permute(0, 3, 1, 2).contiguous()  # (B,2,H,W)
         return x1
 
-    def forward(self, masked_kspace, mask):  # (image, kspace, mask)
+    def forward(self, masked_kspace, mask = None):  # (image, kspace, mask)
         """
         :param masked_kspace: (B, coils, H, W, 2)
         :param mask: (B, 1, 1, W, 1)
         """
         # data consistency
-        x1 = T.ifft2(masked_kspace)  # (B, coils, H, W, 2)      # zero-filled image (B, coils, H, W, 2)
-
+        x1 = fastmri.ifft2c(masked_kspace)  # (B, coils, H, W, 2)      # zero-filled image (B, coils, H, W, 2)
+          # (B, 1, H, W, 1)
+        print(x1.shape)
         # stack mask to be (B, 1, H, W, 1)
         m = mask.repeat(1, 1, x1.shape[-3], 1, 1)  # (B, 1, H, W, 1)
 
         # estimated sens map
-        sens_map = self.sens_net(masked_kspace, m)
+        sens_map = checkpoint(self.custom(self.sens_net), masked_kspace, m) # same shape with masked_kspace
 
-        x1 = self.reduce(x1, sens_map)  # (B, 2, H, W)
+        x1 = checkpoint(self.custom(self.reduce), x1, sens_map) # (B, 2, H, W)
 
-        # image head
-        x1 = self.imHead(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
-        
-
+        x1 = checkpoint(self.custom(self.imHead), x1, masked_kspace, m, sens_map)
         # first stage
-        x2 = self.net1(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
-        e2 = self.edgeNet(x1)  # (B, 1, H, W)
-        x1 = self.fuse1(x2, e2, masked_kspace, m, sens_map)
-        
+        x2 = checkpoint(self.custom(self.net1), x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
+        e2 = checkpoint(self.custom(self.edgeNet), x1)  # (B, 1, H, W)
+        x1 = checkpoint(self.custom(self.fuse1), x2, e2, masked_kspace, m, sens_map)
 
         # second stage
-        x2 = self.net2(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
-        e3 = self.edgeNet(x1)
-        x1 = self.fuse2(x2, e3, masked_kspace, m, sens_map)
-         
+        x2 = checkpoint(self.custom(self.net2), x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
+        e3 = checkpoint(self.custom(self.edgeNet), x1)
+        x1 = checkpoint(self.custom(self.fuse2), x2, e3, masked_kspace, m, sens_map)
 
         # third stage
-        x2 = self.net3(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
-        e4 = self.edgeNet(x1)
-        x1 = self.fuse3(x2, e4, masked_kspace, m, sens_map)
+        x2 = checkpoint(self.custom(self.net3), x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
+        e4 = checkpoint(self.custom(self.edgeNet), x1)
+        x1 = checkpoint(self.custom(self.fuse3), x2, e4, masked_kspace, m, sens_map)
+
+        x2 = checkpoint(self.custom(self.net4), x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
+        e5 = checkpoint(self.custom(self.edgeNet), x1)
+        result = checkpoint(self.custom(self.fuse4), x2, e5, masked_kspace, m, sens_map)
+
+        # inverse fourier transform
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(result)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
         
-        x2 = self.net4(x1, masked_kspace, m, sens_map)  # (B, 2, H, W)
-        e5 = self.edgeNet(x1)
-        result = self.fuse4(x2, e5, masked_kspace, m, sens_map)
         height = result.shape[-2]
         width = result.shape[-1]
-        
+                
         result = result[..., (height - 384) // 2: 384 + (height - 384) // 2,
                  (width - 384) // 2: 384 + (width - 384) // 2]  # (B, 2, 384, 384)
-
-        result = (result ** 2).sum(dim=1).sqrt().unsqueeze(dim = 1) # (B, H, W)
 
         return torch.stack([e2,e3,e4,e5], dim = 0)[..., (height - 384) // 2: 384 + (height - 384) // 2,
                  (width - 384) // 2: 384 + (width - 384) // 2], result
@@ -341,7 +358,7 @@ if __name__ == "__main__":
 
     # model
 
-    model = EAMRI(indim=2, edgeFeat=24, attdim=32, num_head=4, num_iters=[1,3,3,3,3], fNums=[48,96,96,96,96], n_MSRB=3, shift=True)
+    model = EAMRI(indim=2, edgeFeat=32, attdim=32, num_head=4, num_iters=[1,3,3,3,3], fNums=[24,48,48,48,48], n_MSRB=3, shift=True)
 
     # print model number of parameters
 

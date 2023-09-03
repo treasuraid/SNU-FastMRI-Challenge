@@ -31,20 +31,19 @@ def save_reconstructions(reconstructions, out_dir, targets=None, inputs=None):
             if inputs is not None:
                 f.create_dataset('input', data=inputs[fname])
 
-def ssim_loss(gt, pred, maxval=None):
+def ssim_loss(gt, pred, maxval=None, win_size=7, k1=0.01, k2=0.03):
     """Compute Structural Similarity Index Metric (SSIM)
        ssim_loss is defined as (1 - ssim)
     """
     maxval = gt.max() if maxval is None else maxval
 
-    ssim = 0
+    ssim = [0 for _ in range(gt.shape[0])]
     for slice_num in range(gt.shape[0]):
-        ssim = ssim + structural_similarity(
-            gt[slice_num], pred[slice_num], data_range=maxval
+        ssim[slice_num] = structural_similarity(
+            gt[slice_num], pred[slice_num], data_range=maxval, win_size=win_size, K1=k1, K2=k2
         )
-
-    ssim = ssim / gt.shape[0]
-    return 1 - ssim
+        
+    return 1 - np.array(ssim)
 
 def seed_fix(n):
     torch.manual_seed(n)

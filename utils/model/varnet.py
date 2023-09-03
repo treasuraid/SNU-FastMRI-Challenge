@@ -7,8 +7,11 @@ LICENSE file in the root directory of this source tree.
 
 import math
 from typing import List, Tuple
+from torch.utils.checkpoint import checkpoint_sequential
+import torch.utils.checkpoint as checkpoint
 
 from omegaconf import DictConfig, ListConfig
+from torch.utils.checkpoint import checkpoint_sequential
 
 import fastmri
 import torch
@@ -234,7 +237,7 @@ class VarNet(nn.Module):
         super().__init__()
 
         self.sens_net = SensitivityModel(sens_chans, sens_pools)
-
+        
         if unet == "plain":
             self.cascades = nn.ModuleList(
                 [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
@@ -245,23 +248,50 @@ class VarNet(nn.Module):
             self.cascades = nn.ModuleList(
                 [VarNetBlock(SwinUnet(config)) for _ in range(num_cascades)]
             )
+     
+    
+    def custom(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0], inputs[1], inputs[2], inputs[3])
+            return inputs
+        return custom_forward
+    
+    def custom2(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0], inputs[1])
+            return inputs
+        return custom_forward
+    def print(self):
+        for param in self.cascades[0].parameters():
+            print(param.data)
 
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        sens_maps = checkpoint.checkpoint(self.custom2(self.sens_net), masked_kspace, mask) 
+        kspace_pred = masked_kspace.clone()
+
+        for cascade in self.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
+#             kspace_pred =  checkpoint.checkpoint(self.custom(self.kspace_pred), (kspace_pred, masked_kspace, mask, sens_maps))
+#             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+        
+        middle_out = kspace_pred
+                
+        # kspace_pred : [batch, slices, height, width, 2]
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(middle_out)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
+        height = result.shape[-2]
+        width = result.shape[-1]
+        
+        return result[..., (height - 384) // 2: 384 + (height - 384) // 2, (width - 384) // 2: 384 + (width - 384) // 2]
+    
+    def get_kspace(self, masked_kspace:torch.Tensor, mask:torch.Tensor):
+
         sens_maps = self.sens_net(masked_kspace, mask)
         kspace_pred = masked_kspace.clone()
 
         for cascade in self.cascades:
-            kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
 
-        # kspace_pred : [batch, slices, height, width, 2]
-        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
-        height = result.shape[-2]
-        width = result.shape[-1]
-
-
-        return result[..., (height - 384) // 2 : 384 + (height - 384) // 2, (width - 384) // 2 : 384 + (width - 384) // 2]
-
-
+        return kspace_pred
 class VarNetBlock(nn.Module):
     """
     Model block for end-to-end variational network.
@@ -306,6 +336,48 @@ class VarNetBlock(nn.Module):
         model_term = self.sens_expand(model_term, sens_maps)
 
         return current_kspace - soft_dc - model_term
+
+
+class VarnetAdded(nn.Module) :
+
+    def __init__(self, num_cascades=12, ckpt = "../results/varnet_12_aug/checkpoints/best_model.pt"):
+        super.__init__(VarnetAdded, self)
+        self.varnet = VarNet(num_cascades=12, sens_chans=8, sens_pools=4, chans=18, pools=4, unet="plain")
+        self.varnet.load_state_dict(torch.load(ckpt)["model"])
+        self.sens_net = self.varnet.sens_net
+        self.cascades = nn.ModuleList(
+            [VarNetBlock(NormUnet(30, 4)) for _ in range(num_cascades)]
+        )
+
+        # freeze the pretrained varnet
+        for param in self.varnet.parameters():
+            param.requires_grad = False
+
+        for param in self.sens_net.parameters():
+            param.requires_grad = True
+
+    def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+
+        pretrained_kspace = self.varnet.get_kspace(masked_kspace, mask)
+        sens_maps = self.sens_net(masked_kspace, mask)
+        kspace_pred = masked_kspace.clone()
+
+        for cascade in self.varnet.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
+
+        no_mask = torch.ones_like(mask)
+        for cascade in self.cascades:
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, no_mask, sens_maps)
+
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1)  # complex_abs: magnitude, ifft2c: inverse fourier transform
+        height = result.shape[-2]
+        width = result.shape[-1]
+
+        return result[..., (height - 384) // 2: 384 + (height - 384) // 2, (width - 384) // 2: 384 + (width - 384) // 2]
+
+
+
+
 
 
 if __name__ == "__main__" :

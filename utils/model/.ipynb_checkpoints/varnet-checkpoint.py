@@ -7,8 +7,11 @@ LICENSE file in the root directory of this source tree.
 
 import math
 from typing import List, Tuple
+from torch.utils.checkpoint import checkpoint_sequential
+import torch.utils.checkpoint as checkpoint
 
 from omegaconf import DictConfig, ListConfig
+from torch.utils.checkpoint import checkpoint_sequential
 
 import fastmri
 import torch
@@ -57,7 +60,7 @@ class NormUnet(nn.Module):
     def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
         b, c, h, w, two = x.shape
         assert two == 2
-        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w)
+        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w) # b c h w 2 -> b 2c h w
 
     def chan_complex_to_last_dim(self, x: torch.Tensor) -> torch.Tensor:
         b, c2, h, w = x.shape
@@ -234,7 +237,7 @@ class VarNet(nn.Module):
         super().__init__()
 
         self.sens_net = SensitivityModel(sens_chans, sens_pools)
-
+        
         if unet == "plain":
             self.cascades = nn.ModuleList(
                 [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
@@ -245,18 +248,38 @@ class VarNet(nn.Module):
             self.cascades = nn.ModuleList(
                 [VarNetBlock(SwinUnet(config)) for _ in range(num_cascades)]
             )
+     
+    
+    def custom(self, module):
+        def custom_forward(*inputs):
+            inputs = module(inputs[0], inputs[1], inputs[2], inputs[3])
+            return inputs
+        return custom_forward
+
+    def print(self):
+        for param in self.cascades[0].parameters():
+            print(param.data)
 
     def forward(self, masked_kspace: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         sens_maps = self.sens_net(masked_kspace, mask)
         kspace_pred = masked_kspace.clone()
 
         for cascade in self.cascades:
-            kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
-        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1)
+            kspace_pred = checkpoint.checkpoint(self.custom(cascade), kspace_pred, masked_kspace, mask, sens_maps)
+#             kspace_pred =  checkpoint.checkpoint(self.custom(self.kspace_pred), (kspace_pred, masked_kspace, mask, sens_maps))
+#             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+        
+        middle_out = kspace_pred
+                
+        # kspace_pred : [batch, slices, height, width, 2]
+        result = fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(middle_out)), dim=1) # complex_abs: magnitude, ifft2c: inverse fourier transform
         height = result.shape[-2]
         width = result.shape[-1]
-        return result[..., (height - 384) // 2 : 384 + (height - 384) // 2, (width - 384) // 2 : 384 + (width - 384) // 2]
-
+        
+        return result[..., (height - 384) // 2: 384 + (height - 384) // 2,
+                 (width - 384) // 2: 384 + (width - 384) // 2]
+    
+    
 
 class VarNetBlock(nn.Module):
     """
@@ -266,7 +289,6 @@ class VarNetBlock(nn.Module):
     model as a regularizer. A series of these blocks can be stacked to form
     the full variational network.
     """
-
     def __init__(self, model: nn.Module):
         """
         Args:
@@ -296,10 +318,11 @@ class VarNetBlock(nn.Module):
     ) -> torch.Tensor:
 
         zero = torch.zeros(1, 1, 1, 1, 1).to(current_kspace)
-        soft_dc = torch.where(mask, current_kspace - ref_kspace, zero) * self.dc_weight
-        model_term = self.sens_expand(
-            self.model(self.sens_reduce(current_kspace, sens_maps)), sens_maps
-        )
+        mask = mask.bool()
+        soft_dc = torch.where(mask, current_kspace - ref_kspace, zero) * self.dc_weight # todo : mask to boolean tensor
+        model_term = self.sens_reduce(current_kspace, sens_maps)
+        model_term = self.model(model_term)
+        model_term = self.sens_expand(model_term, sens_maps)
 
         return current_kspace - soft_dc - model_term
 
@@ -308,6 +331,20 @@ if __name__ == "__main__" :
 
     from omegaconf import OmegaConf # pip install omegaconf --upgrade
     # check varnet number of parameters
-    config = OmegaConf.load("config/swin_48.yaml")
+    config = "./config/swin_36.yaml"
     model = VarNet(num_cascades=6, sens_chans=8, sens_pools=4, chans=18, pools=4, unet="swin", config=config)
     print(f"Total params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
+
+    # model = VarNet(num_cascades=6, sens_chans=8, sens_pools=4, chans=18, pools=4, unet="plain")
+    # print(f"Total params: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
+    # random input
+    kspace = torch.randn((1,14, 768, 396, 2))
+    mask = torch.randn((1,1, 768, 396, 1)) # 396 = 9 * 11 * 4  # 392 = 14
+
+    model2 = SwinUnet(OmegaConf.load(config))
+
+    # input2 = torch.randn((1,14,800,400,2))
+    # model2(input2)
+
+    output = model(kspace, mask)
+    print("output", output.shape)

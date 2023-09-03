@@ -5,4 +5,6 @@ timm
 scipy
 einops
 OmegaConf
-accelerate
+wandb
+pygrappa
+kornia

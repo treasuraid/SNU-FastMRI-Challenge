@@ -55,7 +55,11 @@ def forward(args):
     
     your_data = glob.glob(os.path.join(args.your_data_path,'*.h5'))
     if len(your_data) != 58:
-        raise  NotImplementedError('Your Data Size Should Be 58')           
+        raise  NotImplementedError(f'Your Data Size Should Be 58 not {len(your_data)}')           
+    
+    # ssim score regarding the slice number
+    
+    ssim_by_slice = np.zeros((58, 40))
     
     ssim_total = 0
     idx = 0
@@ -68,6 +72,8 @@ def forward(args):
                 num_slices = hf['image_label'].shape[0]
             for i_slice in range(num_slices):
                 with h5py.File(l_fname, "r") as hf:
+
+                    # already SSIM score is calculated with mask
                     target = hf['image_label'][i_slice]
                     mask = np.zeros(target.shape)
                     mask[target>5e-5] = 1
@@ -80,17 +86,23 @@ def forward(args):
                     mask = (torch.from_numpy(mask).to(device=device)).type(torch.float)
 
                     maximum = hf.attrs['max']
+#                     maximum = torch.max(target)
                     
                 with h5py.File(y_fname, "r") as hf:
                     recon = hf[args.output_key][i_slice]
                     recon = torch.from_numpy(recon).to(device=device)
-                    
+#                     recon = recon / torch.mean(recon) * torch.mean(target)
                 #ssim_total += ssim_calculator(recon, target, maximum).cpu().numpy()
-                ssim_total += ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
+                ssim_value =  ssim_calculator(recon*mask, target*mask, maximum).cpu().numpy()
+                ssim_total += ssim_value
+                ssim_by_slice[i_subject, i_slice] = ssim_value
                 idx += 1
             
     print("Leaderboard Dataset SSIM : {:.4f}".format(ssim_total/idx))
 
+    # save ssim by slice to csv 
+    np.savetxt(os.path.join(args.your_data_path, "leaderboard_ssim_result.csv"), ssim_by_slice, delimiter=",")
+    
 
 if __name__ == '__main__':
     """
@@ -107,7 +119,7 @@ if __name__ == '__main__':
     """
     Modify Path Below To Test Your Results
     """
-    parser.add_argument('-yp', '--your_data_path', type=Path, default='../result/test_accelerator/reconstructions_leaderboard/')
+    parser.add_argument('-yp', '--your_data_path', type=Path, default='../result/test_varnet_12_gracheck2/reconstructions_leaderboard/')
     parser.add_argument('-m', '--mask', type=str, default='acc4', choices=['acc4', 'acc8'], help='type of mask | acc4 or acc8')
     parser.add_argument('-key', '--output_key', type=str, default='reconstruction')
     
