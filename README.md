@@ -36,3 +36,8 @@ reconstruct.py -n varnet_6_13_4_lm -m acc8
 ```
 train_2nd.py -n nafnet_vanilla_from_8 --seed 2023 --report-interval 100 --lr 0.0003 --batch-size 2 --grad_accumulation 16 --model nafnet --recon-path ../result/varnet_8_13_4_resume_base_8x/ --loss_mask True --grad_norm 0.01
 ```
+
+## Detailed Solution Introduction
+My solution details (augmentation, sampling strategy, etc) is on presentation video at https://www.youtube.com/@SNUFastMRIChallenge 팀 으아아아아
+
+
