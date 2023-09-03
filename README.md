@@ -1,4 +1,4 @@
-# SNU FastMRI challenge 2023 - 2nd place solution  
+# SNU FastMRI challenge 2023 - 2nd place solution by team 으아아아아
 
 ## Team members 
 - [Jinpil Choi] (Seoul National University)
