@@ -1,10 +1,10 @@
-# SNU FastMRI challenge 2023 - 2nd place solution  
+# SNU FastMRI challenge 2023 - 2nd place solution by team 으아아아아
 
 ## Team members 
 - [Jinpil Choi] (Seoul National University)
 
 ## Introduction
-My Solution consist of 3 training steps.
+My solution consists of 3 training steps.
 
 1. Pre-training E2E-Varnet(6 cacacades, 13 unet channels, 4 sensitivity map channels) with total 5674 slices, 357 training patients mri data.
 1.1 Utilized various masking strategy from 4x to 8x undersampling for learning general reconstruction model.
@@ -45,7 +45,7 @@ reconstruct.py -n varnet_6_13_4_lm -m acc8
 train_2nd.py -n nafnet_vanilla_from_8 --seed 2023 --report-interval 100 --lr 0.0003 --batch-size 2 --grad_accumulation 16 --model nafnet --recon-path ../result/varnet_8_13_4_resume_base_8x/ --loss_mask True --grad_norm 0.01
 ```
 
-### Ablation Study
+## Ablation Study
 
 1. Slice & SSIM loss
 
@@ -54,3 +54,6 @@ train_2nd.py -n nafnet_vanilla_from_8 --seed 2023 --report-interval 100 --lr 0.0
 - So SSIM value was higher as slice number goes up.
 
 2. Edge loss of grappa reconstruction image and original image and E2E-Varnet reconstruction image 
+
+## Detailed Solution Introduction
+My solution details (augmentation, sampling strategy, etc) is on presentation video at https://www.youtube.com/@SNUFastMRIChallenge 팀 으아아아아
